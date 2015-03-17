@@ -1,0 +1,7 @@
+# Configurational file for em2 integration fix
+# Sets Inertia, and flags for integration of
+# quaternion, membraine composition, and protein composition
+# All types must be described
+# I Inertia(X Y Z) Quaternion_flag(0/1) Mem_comp_flag(0/1) Prot_comp_flag(0/1)
+1 6.0 6.0 6.0 1 1 1
+2 6.0 6.0 6.0 0 0 1
