@@ -1,1 +1,0 @@
-# EM2_LAMMPS
