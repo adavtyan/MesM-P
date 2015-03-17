@@ -106,6 +106,11 @@ class PairEM2 : public Pair {
   double *rho_m, *rho_b, **xi_m, **xi_b; // Per-atom arrays
   int comm_ind; // Index of communication procedure to invoke
 
+  // Per-term energy arrays
+  enum EnergyTerms{ET_TOTAL=0, ET_LJ216, ET_LUCY, ET_BEND, ET_OLIG, ET_IC, ET_CC, ET_MEM_COMP, ET_PROT_COMP, nEnergyTerms};
+  double energy[nEnergyTerms], energy_all[nEnergyTerms];
+  int nEnergy; // Dublicated variable used for extract() function
+
   double **offset;
   class AtomVecEM2 *avec;
 

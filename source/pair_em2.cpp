@@ -128,7 +128,7 @@ PairEM2::~PairEM2()
 void PairEM2::compute(int eflag, int vflag)
 {
   int i,j,ii,jj,inum,jnum,itype,jtype;
-  double evdwl,one_eng,r,rsq,rinv,r2inv,r4inv,r16inv,fpair,factor_lj,epsilon,sigma,eng;
+  double evdwl,one_eng,r,rsq,rinv,r2inv,r4inv,r16inv,fpair,factor_lj,epsilon,sigma,eng,eng_lj;
   double fforce[3],gb_force[3],torque[3],ttor[3],rtor[3],r12[3],ru12[3];
   int *ilist,*jlist,*numneigh,**firstneigh;
   double xtmp,ytmp,ztmp;
@@ -181,6 +181,8 @@ void PairEM2::compute(int eflag, int vflag)
 
   // Number of atoms involved in pair calculations
   double npall = newton_pair ? nall : nlocal;
+
+  for (int i=0;i<nEnergyTerms;++i) energy[i] = 0.0;
 
   inum = list->inum;
   ilist = list->ilist;
@@ -241,7 +243,6 @@ void PairEM2::compute(int eflag, int vflag)
 
       for (jj = 0; jj < jnum; jj++) {
         j = jlist[jj];
-        factor_lj = special_lj[sbmask(j)];
         j &= NEIGHMASK;
 
         // r12 = center to center vector
@@ -303,7 +304,6 @@ void PairEM2::compute(int eflag, int vflag)
 
       for (jj = 0; jj < jnum; jj++) {
         j = jlist[jj];
-        factor_lj = special_lj[sbmask(j)];
         j &= NEIGHMASK;
 
         // r12 = center to center vector
@@ -458,8 +458,11 @@ void PairEM2::compute(int eflag, int vflag)
           fpair = epsilon*(r16inv*lj1[itype][jtype]-r2inv*lj2[itype][jtype]);
           fpair *= r2inv;
 
-          eng = (r16inv*lj3[itype][jtype]-r2inv*lj4[itype][jtype]);
-          if (eflag) one_eng += epsilon*eng;
+          eng_lj = (r16inv*lj3[itype][jtype]-r2inv*lj4[itype][jtype]);
+          eng = epsilon*eng_lj;
+
+          energy[ET_LJ216] += eng;
+          if (eflag) one_eng += eng;
 //          printf("%d %d %f\n",atom->tag[i], atom->tag[j], epsilon*eng);
           fforce[0] += r12[0]*fpair;
           fforce[1] += r12[1]*fpair;
@@ -469,7 +472,7 @@ void PairEM2::compute(int eflag, int vflag)
           // Calculating -dphi/dt for phi_b only
           if (spam_flag && b_spam_force) {
             // Contribution from the derivative of prefactor
-            dpb = 0.5*lj216_k0[itype][jtype]*eng;
+            dpb = 0.5*lj216_k0[itype][jtype]*eng_lj;
 
             if (iphi_b<=0.0 && iphi_b>=-1.0) idphi[1] += dpb;
             if (jphi_b<=0.0 && jphi_b>=-1.0) jdphi[1] += dpb;
@@ -486,7 +489,10 @@ void PairEM2::compute(int eflag, int vflag)
           epsq2 = epsilon*(1-sigma)*(1-sigma);
           fpair = 12*epsq2/lucy_sigmasq[itype][jtype];
 
-          if (eflag) one_eng += epsq2*(1-sigma)*(1+3*sigma);
+          eng = epsq2*(1-sigma)*(1+3*sigma);
+
+          energy[ET_LUCY] += eng;
+          if (eflag) one_eng += eng;
 //          printf("%d %d %f\n",atom->tag[i], atom->tag[j], epsq2*(1-sigma)*(1+3*sigma));
           fforce[0] += r12[0]*fpair;
           fforce[1] += r12[1]*fpair;
@@ -560,7 +566,10 @@ void PairEM2::compute(int eflag, int vflag)
 //          fpair -= (thetai - gamma_r)*(thetai*r2inv + gamma*rinv - 2*gamma_epsilon*alpha_sq*rinv);
 //          fpair -= (thetaj + gamma_r)*(thetaj*r2inv - gamma*rinv + 2*gamma_epsilon*alpha_sq*rinv);
 
-          if (eflag) one_eng += epsilon_sigmasq_r2inv*uij;
+          eng = epsilon_sigmasq_r2inv*uij;
+
+          energy[ET_BEND] += eng;
+          if (eflag) one_eng += eng;
 //          printf("%d %d %f\n",atom->tag[i], atom->tag[j], epsilon_sigmasq_r2inv*uij);
 
           // Adding all forces
@@ -629,8 +638,11 @@ void PairEM2::compute(int eflag, int vflag)
             torque[0] *= epsilon;
             torque[1] *= epsilon;
             torque[2] *= epsilon;
-            
-            if (eflag) one_eng -= epsilon*MathExtra::dot3(nti, ntj)/((double)aolig[itype][jtype]);
+
+            eng = -epsilon*MathExtra::dot3(nti, ntj)/((double)aolig[itype][jtype]);
+
+            energy[ET_OLIG] += eng;
+            if (eflag) one_eng += eng;
 
             ttor[0] += torque[0];
             ttor[1] += torque[1];
@@ -697,7 +709,10 @@ void PairEM2::compute(int eflag, int vflag)
           gb_force[1] *= 2.0*epsilon;
           gb_force[2] *= 2.0*epsilon;
 
-          if (eflag) one_eng -= epsilon*uij;
+          eng = -epsilon*uij;
+
+          energy[ET_CC] += eng;
+          if (eflag) one_eng += eng;
 //          printf("%d %d %f\n",atom->tag[i], atom->tag[j], -epsilon*uij);
 
           // Adding all forces
@@ -887,7 +902,10 @@ void PairEM2::compute(int eflag, int vflag)
       dpm = 0.5*cc_epsilon[itype]*zeta_b;
       dpb = 0.5*cc_epsilon[itype]*zeta_m;
 
-      if (eflag) one_eng -= cc_epsilon[itype]*zeta_m*zeta_b;
+      eng = -cc_epsilon[itype]*zeta_m*zeta_b;
+
+      energy[ET_CC] += eng;
+      if (eflag) one_eng += eng;
 
       idphi[0] += dpm;
       idphi[1] += dpb;
@@ -901,9 +919,12 @@ void PairEM2::compute(int eflag, int vflag)
       dpm = mem_comp_epsilon[itype]*pow(iphi_m,9.0);
 
       // phi_m gradient term energy
-      if (eflag) one_eng += mem_comp_xi_epsilon[itype]*MathExtra::dot3(xi_m[i],xi_m[i]);
+      eng = mem_comp_xi_epsilon[itype]*MathExtra::dot3(xi_m[i],xi_m[i]);
       // Well potential
-      if (eflag) one_eng += mem_comp_epsilon[itype]*0.1*pow(iphi_m,10.0);
+      eng += mem_comp_epsilon[itype]*0.1*pow(iphi_m,10.0);
+
+      energy[ET_MEM_COMP] += eng;
+      if (eflag) one_eng += eng;
 
 //      if (atom->tag[i]==2727) printf("%d %d %f %f %f\n",update->ntimestep,atom->tag[i],iphi_m,dpm,mem_comp_epsilon[itype]*0.1*pow(iphi_m,10.0));
 
@@ -921,10 +942,13 @@ void PairEM2::compute(int eflag, int vflag)
 //      dpb = prot_comp_epsilon[itype]*(6.0*pow(iphi_b,5.0) + 2.0*iphi_b);
 
       // phi_b gradient term energy
-      if (eflag) one_eng += prot_comp_xi_epsilon[itype]*MathExtra::dot3(xi_b[i],xi_b[i]);
+      eng = prot_comp_xi_epsilon[itype]*MathExtra::dot3(xi_b[i],xi_b[i]);
       // Well potential
-      if (eflag) one_eng += prot_comp_epsilon[itype]*phi2*(phi4 + 1.0);
+      eng += prot_comp_epsilon[itype]*phi2*(phi4 + 1.0);
 //      if (eflag) one_eng += prot_comp_epsilon[itype]*(pow(iphi_b,6.0) + pow(iphi_b,2.0));
+
+      energy[ET_PROT_COMP] += eng;
+      if (eflag) one_eng += eng;
 
       idphi[1] -= dpb;
     }
@@ -997,6 +1021,12 @@ void PairEM2::compute(int eflag, int vflag)
       printf("%d %f %f\n", atom->tag[i], dphi[i][0], dphi[i][1]);
     }
   }*/
+
+  // Sum energies across terms and across processors
+
+  for (int i=1;i<nEnergyTerms;++i) energy[ET_TOTAL] += energy[i];
+  MPI_Allreduce(energy,energy_all,nEnergyTerms,MPI_DOUBLE,MPI_SUM,world);
+
 
   if (vflag_fdotr) virial_fdotr_compute();
 }
@@ -1462,6 +1492,8 @@ void PairEM2::init_style()
   nt0[0] = 0.0;
   nt0[1] = 1.0;
   nt0[2] = 0.0;
+
+  for (int i=0;i<nEnergyTerms;++i) energy[i] = 0.0;
 
   // Check that composition cutoff was set
   // if any of the corresponding potentioal is on
@@ -1979,9 +2011,16 @@ void PairEM2::unpack_reverse_comm(int n, int *list, double *buf)
 
 void *PairEM2::extract(const char *str, int &dim)
 {
+  dim = 0;
+  if (strcmp(str,"nenergy") == 0) {
+    nEnergy = nEnergyTerms;
+    return (void *) &nEnergy;
+  }
+
   dim = 1;
   if (strcmp(str,"rho_m") == 0) return (void *) rho_m;
   if (strcmp(str,"rho_b") == 0) return (void *) rho_b;
+  if (strcmp(str,"energy") == 0) return (void *) energy_all;
 
   dim = 2;
   if (strcmp(str,"xi_m") == 0) return (void *) xi_m;

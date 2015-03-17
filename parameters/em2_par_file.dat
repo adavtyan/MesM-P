@@ -44,7 +44,7 @@
 #1 1.0 1.0 0.09
 
 # I epsilon(?) zeta_0
-[Composition_Coupling]
+[Composition_Coupling]-
 1 9.56022944 2.0
 #1 40.0 2.0
 
@@ -60,7 +60,7 @@
 # Flow term. Takes only one parameter
 # Membrane or Protein Composition potential must be on for this to work
 # 1 on, 0 off
-[Flow_Term_Flag]-
+[Flow_Term_Flag]
 1
 
 # Turns on or off all SPAM calculations
