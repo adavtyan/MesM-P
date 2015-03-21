@@ -101,9 +101,9 @@ class PairEM2 : public Pair {
   int flow_term_flag;
   double spam_gamma;
 
-  // Variables for density and composition gradient calculations
+  // Variables for density, composition gradient, and number of neighbours calculations
   int nmax;
-  double *rho_m, *rho_b, **xi_m, **xi_b; // Per-atom arrays
+  double *rho_m, *rho_b, **xi_m, **xi_b, *n_c; // Per-atom arrays
   int comm_ind; // Index of communication procedure to invoke
 
   // Per-term energy arrays

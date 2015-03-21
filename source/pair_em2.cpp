@@ -61,6 +61,7 @@ PairEM2::PairEM2(LAMMPS *lmp) : Pair(lmp)
   rho_b = NULL;
   xi_m = NULL;
   xi_b = NULL;
+  n_c = NULL;
 
   // set comm size needed by this Pair
 
@@ -120,6 +121,7 @@ PairEM2::~PairEM2()
     memory->destroy(rho_b);
     memory->destroy(xi_m);
     memory->destroy(xi_b);
+    memory->destroy(n_c);
   }
 }
 
@@ -184,6 +186,14 @@ void PairEM2::compute(int eflag, int vflag)
 
   for (int i=0;i<nEnergyTerms;++i) energy[i] = 0.0;
 
+  int tag_debug=491400000;
+  for (i=0;i<nall;i++) {
+    if (atom->tag[i]==tag_debug) {
+      double **phi_half = avec->phi_half;
+      printf("PAIR BEG step=%d id=%d dphi={%f %f} phi={%f %f} phi_half={%f %f}\n", update->ntimestep, atom->tag[i], dphi[i][0], dphi[i][1], phi[i][0], phi[i][1], phi_half[i][0], phi_half[i][1]);
+    }
+  }
+
   inum = list->inum;
   ilist = list->ilist;
   numneigh = list->numneigh;
@@ -192,7 +202,7 @@ void PairEM2::compute(int eflag, int vflag)
   // calculate per-atom densities and gradients
   // if Membrain Composition or Protein Composition potentials are on
 
-  if (spam_flag && comp_flag) {
+//  if (spam_flag && comp_flag) {
 
     // grow energy array if necessary
 
@@ -201,14 +211,16 @@ void PairEM2::compute(int eflag, int vflag)
       memory->destroy(rho_b);
       memory->destroy(xi_m);
       memory->destroy(xi_b);
+      memory->destroy(n_c);
       nmax = atom->nmax;
       memory->create(rho_m,nmax,"pair:rho_m");
       memory->create(rho_b,nmax,"pair:rho_b");
       memory->create(xi_m,nmax,3,"pair:xi_m");
       memory->create(xi_b,nmax,3,"pair:xi_b");
+      memory->create(n_c,nmax,"pair:n_c");
     }
 
-    // zero out densities and gradients
+    // zero out per-atom density, gradient, and nuber of neighbours
 
     for (i = 0; i < npall; i++) {
       rho_m[i] = 0.0;
@@ -219,6 +231,7 @@ void PairEM2::compute(int eflag, int vflag)
       xi_b[i][0] = 0.0;
       xi_b[i][1] = 0.0;
       xi_b[i][2] = 0.0;
+      n_c[i] = 0.0;
     }
 
     // calculate densities rho_m and rho_b
@@ -255,6 +268,14 @@ void PairEM2::compute(int eflag, int vflag)
 
         // compute if less than cutoff
 
+        // Nummber of neighbours calculation
+        if (rsq < cutsq[itype][jtype]) {
+          n_c[i] += 1.0;
+          if (newton_pair || j < nlocal)
+            n_c[j] += 1.0;
+        }
+
+        // Density calculation
         if (rsq < comp_rcutsq) {
           r = sqrt(rsq);
           sigma = r*comp_rcut_inv;
@@ -316,6 +337,7 @@ void PairEM2::compute(int eflag, int vflag)
 
         // compute if less than cutoff
 
+        // Composition gradient calulation
         if (rsq < comp_rcutsq) {
 
           // SPAM variables, phi array
@@ -368,7 +390,7 @@ void PairEM2::compute(int eflag, int vflag)
     comm_ind = 2;
     if (newton_pair) comm->reverse_comm_pair(this);
     comm->forward_comm_pair(this);
-  }
+//  }
 
   // Main loop
   // loop over neighbors of my atoms
@@ -473,6 +495,11 @@ void PairEM2::compute(int eflag, int vflag)
           if (spam_flag && b_spam_force) {
             // Contribution from the derivative of prefactor
             dpb = 0.5*lj216_k0[itype][jtype]*eng_lj;
+
+            if (atom->tag[i]==tag_debug && (iphi_b<=0.0 && iphi_b>=-1.0))
+              printf("LJ tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], dpb);
+            if (atom->tag[j]==tag_debug && (jphi_b<=0.0 && jphi_b>=-1.0))
+              printf("LJ tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], dpb);
 
             if (iphi_b<=0.0 && iphi_b>=-1.0) idphi[1] += dpb;
             if (jphi_b<=0.0 && jphi_b>=-1.0) jdphi[1] += dpb;
@@ -621,6 +648,11 @@ void PairEM2::compute(int eflag, int vflag)
             // Contribution from the derivative of gamma
             dpb -= 0.25*epsilon_sigmasq_r2inv*bend_gamma_epsilon[itype][jtype]*(thetai_gamma_r - thetaj_gamma_r)*alpha_sq*r;
             
+            if (atom->tag[i]==tag_debug && (iphi_b<=0.0 && iphi_b>=-1.0))
+              printf("BEND tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], dpb);
+            if (atom->tag[j]==tag_debug && (jphi_b<=0.0 && jphi_b>=-1.0))
+              printf("BEND tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], dpb);
+
             if (iphi_b<=0.0 && iphi_b>=-1.0) idphi[1] += dpb;
             if (jphi_b<=0.0 && jphi_b>=-1.0) jdphi[1] += dpb;
           }
@@ -711,7 +743,7 @@ void PairEM2::compute(int eflag, int vflag)
 
           eng = -epsilon*uij;
 
-          energy[ET_CC] += eng;
+          energy[ET_IC] += eng;
           if (eflag) one_eng += eng;
 //          printf("%d %d %f\n",atom->tag[i], atom->tag[j], -epsilon*uij);
 
@@ -761,10 +793,22 @@ void PairEM2::compute(int eflag, int vflag)
             // and from the derivative of gamma
             dpb = 0.25*epsilon*(thetai_gamma_r - thetaj_gamma_r)*alpha_sq*r;
             if (iphi_b<=1.0 && iphi_b>=-1.0) {
+
+              if (atom->tag[i]==tag_debug) {
+                printf("IC1 tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], ic_lambda_k[itype]*uij);
+                if (iphi_b<=0.0) printf("IC2 tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], ic_gamma_epsilon[itype]*dpb);
+              }
+
               idphi[1] += ic_lambda_k[itype]*uij;
               if (iphi_b<=0.0) idphi[1] += ic_gamma_epsilon[itype]*dpb;
             }
             if (newton_pair || j < nlocal) {
+
+              if (atom->tag[j]==tag_debug) {
+                printf("IC1 tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], ic_lambda_k[jtype]*uij);
+                if (jphi_b<=0.0) printf("IC2 tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], ic_gamma_epsilon[jtype]*dpb);
+              }
+
               if (jphi_b<=1.0 && jphi_b>=-1.0) {
                 jdphi[1] += ic_lambda_k[jtype]*uij;
                 if (jphi_b<=0.0) jdphi[1] += ic_gamma_epsilon[jtype]*dpb;
@@ -791,10 +835,10 @@ void PairEM2::compute(int eflag, int vflag)
             jdphi[0] -= mem_comp_xi_epsilon[jtype]*mass[itype]*dpm;
           }
 
-/*          if (atom->tag[i]==1) {
+/*          if (atom->tag[i]==tag_debug) {
             printf("tagi=%d tagj=%d irho=%f jrho=%f ixi={%f %f %f} jxi={%f %f %f} r=%f r12={%f %f %f} sigma=%f dw=%f xi_epsilon=%f dphi=%f\n", atom->tag[i], atom->tag[j], rho_m[i], rho_m[j], xi_m[i][0], xi_m[i][1], xi_m[i][2], xi_m[j][0], xi_m[j][1], xi_m[j][2], r, r12[0], r12[1], r12[2], sigma, dw, mem_comp_xi_epsilon[itype]*mass[jtype], mem_comp_xi_epsilon[itype]*mass[jtype]*dpm);
           }
-          if (atom->tag[j]==1) {
+          if (atom->tag[j]==tag_debug) {
             printf("tagi=%d tagj=%d irho=%f jrho=%f ixi={%f %f %f} jxi={%f %f %f} r=%f r12={%f %f %f} sigma=%f dw=%f xi_epsilon=%f dphi=%f\n", atom->tag[i], atom->tag[j], rho_m[i], rho_m[j], xi_m[i][0], xi_m[i][1], xi_m[i][2], xi_m[j][0], xi_m[j][1], xi_m[j][2], r, r12[0], r12[1], r12[2], sigma, dw, mem_comp_xi_epsilon[jtype]*mass[itype], mem_comp_xi_epsilon[jtype]*mass[itype]*dpm);
           }*/
         }
@@ -811,15 +855,20 @@ void PairEM2::compute(int eflag, int vflag)
           // dot(xi_b_i+xi_b_j, r12)
           dpb *= (xi_b[i][0]+xi_b[j][0])*r12[0] + (xi_b[i][1]+xi_b[j][1])*r12[1] + (xi_b[i][2]+xi_b[j][2])*r12[2];
 
+            if (atom->tag[i]==tag_debug)
+              printf("PROT_COMP tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], prot_comp_xi_epsilon[itype]*mass[jtype]*dpb);
+            if (atom->tag[j]==tag_debug)
+              printf("PROT_COMP tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], -prot_comp_xi_epsilon[jtype]*mass[itype]*dpb);
+
           idphi[1] += prot_comp_xi_epsilon[itype]*mass[jtype]*dpb;
           if (newton_pair || j < nlocal) {
             jdphi[1] -= prot_comp_xi_epsilon[jtype]*mass[itype]*dpb;
           }
 
-/*          if (atom->tag[i]==105) {
+/*          if (atom->tag[i]==tag_debug) {
             printf("tagi=%d tagj=%d irho=%f jrho=%f ixi={%f %f %f} jxi={%f %f %f} r=%f r12={%f %f %f} sigma=%f dw=%.12f xi_epsilon=%f dphi=%.12f\n", atom->tag[i], atom->tag[j], rho_b[i], rho_b[j], xi_b[i][0], xi_b[i][1], xi_b[i][2], xi_b[j][0], xi_b[j][1], xi_b[j][2], r, r12[0], r12[1], r12[2], sigma, dw, prot_comp_xi_epsilon[itype]*mass[jtype], prot_comp_xi_epsilon[itype]*mass[jtype]*dpb);
           }
-          if (atom->tag[j]==105) {
+          if (atom->tag[j]==tag_debug) {
             printf("tagi=%d tagj=%d irho=%f jrho=%f ixi={%f %f %f} jxi={%f %f %f} r=%f r12={%f %f %f} sigma=%f dw=%.12f xi_epsilon=%f dphi=%.12f\n", atom->tag[i], atom->tag[j], rho_b[i], rho_b[j], xi_b[i][0], xi_b[i][1], xi_b[i][2], xi_b[j][0], xi_b[j][1], xi_b[j][2], r, r12[0], r12[1], r12[2], sigma, dw, prot_comp_xi_epsilon[jtype]*mass[itype], prot_comp_xi_epsilon[jtype]*mass[itype]*dpb);
           }*/
         }
@@ -891,6 +940,9 @@ void PairEM2::compute(int eflag, int vflag)
       if (iphi_b>=-1.0 && iphi_b<=1.0) {
         dpb = -ic_lambda_m[itype];
         idphi[1] += dpb;
+
+        if (atom->tag[i]==tag_debug)
+          printf("IC3 tagi=%d dpb=%f\n", atom->tag[i], dpb);
       }
     }
 
@@ -950,6 +1002,9 @@ void PairEM2::compute(int eflag, int vflag)
       energy[ET_PROT_COMP] += eng;
       if (eflag) one_eng += eng;
 
+        if (atom->tag[i]==tag_debug)
+          printf("PROT_WELL tagi=%d dpb=%f\n", atom->tag[i], -dpb);
+
       idphi[1] -= dpb;
     }
 
@@ -976,16 +1031,22 @@ void PairEM2::compute(int eflag, int vflag)
     if (eflag_atom) eatom[i] += evdwl;
   }
 
+//  printf("STAT_SUM mem_stat=%f prot_stat=%f  sum_phi_m=%f sum_phi_b=%f n_phi_m=%f n_phi_b=%f\n", mem_stat, prot_stat, sum_phi_m, sum_phi_b, n_phi_m, n_phi_b);
+
   MPI_Allreduce(&sum_phi_m,&sum_phi_m_all,1,MPI_DOUBLE,MPI_SUM,world);
   MPI_Allreduce(&sum_phi_b,&sum_phi_b_all,1,MPI_DOUBLE,MPI_SUM,world);
   MPI_Allreduce(&n_phi_m,&n_phi_m_all,1,MPI_DOUBLE,MPI_SUM,world);
   MPI_Allreduce(&n_phi_b,&n_phi_b_all,1,MPI_DOUBLE,MPI_SUM,world);
+
+//  printf("STAT_SUM_ALL mem_stat=%f prot_stat=%f sum_phi_m=%f sum_phi_b=%f n_phi_m=%f n_phi_b=%f\n", mem_stat, prot_stat, sum_phi_m_all, sum_phi_b_all, n_phi_m_all, n_phi_b_all);
 
   // Propogate mem_stat and prot_stat
   // stat += epsilon*sum_phi/n_phi
 
   if (n_phi_m_all>0.0) mem_stat += update->dt*mem_stat_epsilon*sum_phi_m_all/n_phi_m_all;
   if (n_phi_b_all>0.0) prot_stat += update->dt*prot_stat_epsilon*sum_phi_b_all/n_phi_b_all;
+
+//  printf("STAT dstat={%f %f} stat={%f %f}\n", update->dt*mem_stat_epsilon*sum_phi_m_all/n_phi_m_all, update->dt*prot_stat_epsilon*sum_phi_b_all/n_phi_b_all, mem_stat, prot_stat);
 
 //  if(comm->me==0) printf("MEM  STAT step: %d sum_phi: %f n_phi: %f dstat: %f stat: %f\n", update->ntimestep, sum_phi_m_all, n_phi_m_all, update->dt*mem_stat_epsilon*sum_phi_m_all/n_phi_m_all, mem_stat);
 //  if(comm->me==0) printf("PROT STAT step: %d sum_phi: %f n_phi: %f dstat: %f stat: %f\n", update->ntimestep, sum_phi_b_all, n_phi_b_all, update->dt*prot_stat_epsilon*sum_phi_b_all/n_phi_b_all, prot_stat);
@@ -1000,6 +1061,9 @@ void PairEM2::compute(int eflag, int vflag)
     // Subtract stat from dphi
     if (spam_flag) {
       
+        if (atom->tag[i]==tag_debug)
+//          printf("STAT tagi=%d dpb=%f\n", atom->tag[i], -prot_stat);
+
       idphi[0] -= mem_stat;
       idphi[1] -= prot_stat;
     }
@@ -1010,17 +1074,21 @@ void PairEM2::compute(int eflag, int vflag)
 //      if (atom->tag[i]==2727) printf("FLOW %d %d %f\n", update->ntimestep, atom->tag[i], MathExtra::dot3(v[i],xi_m[i]));
       if (mem_comp_pot_flag[itype]) idphi[0] += MathExtra::dot3(v[i],xi_m[i]);
       if (prot_comp_pot_flag[itype]) idphi[1] += MathExtra::dot3(v[i],xi_b[i]);
+
+      if (atom->tag[i]==tag_debug && prot_comp_pot_flag[itype])
+          printf("VEL tagi=%d dpb=%f\n", atom->tag[i], MathExtra::dot3(v[i],xi_b[i]));
     }
 
     dphi[i][0] += idphi[0];
     dphi[i][1] += idphi[1];
   }
 
-/*  for (i=0;i<nall;i++) {
-    if (atom->tag[i]==105) {
-      printf("%d %f %f\n", atom->tag[i], dphi[i][0], dphi[i][1]);
+  for (i=0;i<nall;i++) {
+    if (atom->tag[i]==tag_debug) {
+      double **phi_half = avec->phi_half;
+      printf("PAIR END step=%d id=%d dphi={%f %f} phi={%f %f} phi_half={%f %f}\n", update->ntimestep, atom->tag[i], dphi[i][0], dphi[i][1], phi[i][0], phi[i][1], phi_half[i][0], phi_half[i][1]);
     }
-  }*/
+  }
 
   // Sum energies across terms and across processors
 
@@ -1919,6 +1987,7 @@ int PairEM2::pack_forward_comm(int n, int *list, double *buf,
       j = list[i];
       buf[m++] = rho_m[j];
       buf[m++] = rho_b[j];
+      buf[m++] = n_c[j];
     }
   }
   if (comm_ind == 2) {
@@ -1945,6 +2014,7 @@ void PairEM2::unpack_forward_comm(int n, int first, double *buf)
     for (i = first; i < last; i++) {
       rho_m[i] = buf[m++];
       rho_b[i] = buf[m++];
+      n_c[i] = buf[m++];
     }
   }
   if (comm_ind == 2) {
@@ -1969,6 +2039,7 @@ int PairEM2::pack_reverse_comm(int n, int first, double *buf)
     for (i = first; i < last; i++) {
       buf[m++] = rho_m[i];
       buf[m++] = rho_b[i];
+      buf[m++] = n_c[i];
     }
   }
   if (comm_ind == 2) {
@@ -1994,6 +2065,7 @@ void PairEM2::unpack_reverse_comm(int n, int *list, double *buf)
       j = list[i];
       rho_m[j] += buf[m++];
       rho_b[j] += buf[m++];
+      n_c[j] += buf[m++];
     }
   }
   if (comm_ind == 2) {
@@ -2020,6 +2092,7 @@ void *PairEM2::extract(const char *str, int &dim)
   dim = 1;
   if (strcmp(str,"rho_m") == 0) return (void *) rho_m;
   if (strcmp(str,"rho_b") == 0) return (void *) rho_b;
+  if (strcmp(str,"n_c") == 0) return (void *) n_c;
   if (strcmp(str,"energy") == 0) return (void *) energy_all;
 
   dim = 2;
