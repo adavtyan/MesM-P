@@ -1,3 +1,6 @@
+# EM2 model parameters in real LAMMPS units (e.g. kcal/mol for energy and A for distance)
+# Per-type moment of ineria is defined in integration_conf.dat
+
 # I J epsilon k0 sigma
 [Lennard-Jones_2-16]
 1 1 1.553537 0.5 68.0
@@ -5,14 +8,14 @@
 
 # I J epsilon sigma
 [Lucy_Excluded_Volume]
-1 2 1.195 136.0
-2 2 0.239 136.0 
+1 2 1.195 90.0
+2 2 0.239 90.0 
 #1 2 5.0 136.0
 #2 2 1.0 136.0
 
 # I J epsilon k0 sigma epsilon_gamma
 [EM2_Bending]
-1 1 2.50956 0.5 68.0 0.009
+1 1 6.1 0.5 68.0 0.015
 #1 1 2.50956 0.5 68.0 0.009
 #1 1 10.5 0.5 68.0 0.09
 
@@ -24,7 +27,7 @@
 # used in Composition potentials. Only one line allowed.
 # This is needed if either Membrane_Composition or Protein_Composition are on
 [Composition_Cutoff]
-136.0
+90.0
 
 # I epsilon_xi(gradient) epsilon(well potential)
 [Membrane_Composition]
@@ -40,7 +43,9 @@
 
 # I Lambda_M(?) Lambda_K(?) epsilon_gamma
 [Intrinsic_Curvature_Coupling]
-1 0.06 1.195 0.009
+1 0.06 1.195 0.015
+#1 0.06 0.6 0.02
+#1 0.06 0.6 0.02
 #1 1.0 1.0 0.09
 
 # I epsilon(?) zeta_0
@@ -51,7 +56,7 @@
 # First line: mem_stat_epsilon prot_stat_epsilon
 # Next lines: I mem_stat_flag prot_stat_flag
 [Composition_Stat]
-1195.02868 1195.02868
+1.19502868 1.19502868
 1 1 1
 2 0 1
 #1195.02868 1195.02868
@@ -67,4 +72,4 @@
 # and set spam_gamma: dphi/dt = - gamma * dF/dphi
 # flag(1 on, 0 off) spam_gamma
 [SPAM_Flag]
-1 4.0
+1 0.01
