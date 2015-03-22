@@ -190,7 +190,7 @@ double lucy_pot(double *par, Atoms &atoms, PairList &pair)
 double lj216_pot(double *par, Atoms &atoms, PairList &pair)
 {
   int ii,i,j;
-  double r,rsq,sigma,rsq_cut;
+  double r,rsq,sigma,rsq_cut,f12;
   double eng_one, eng = 0.0;
 
   rsq_cut = par[3]*par[3];
@@ -199,6 +199,7 @@ double lj216_pot(double *par, Atoms &atoms, PairList &pair)
   int *list = pair.list;
   int *type = atoms.type;
   double **x = atoms.x;
+  double **phi = atoms.phi;
 
   for (ii=0;ii<n;++ii) {
     i = list[2*ii];
@@ -208,7 +209,8 @@ double lj216_pot(double *par, Atoms &atoms, PairList &pair)
       if (rsq<rsq_cut) {
         r = sqrt(rsq);
         sigma = par[2]/r;
-        eng_one = 4.0*par[0]*(pow(sigma,16.0) - sigma*sigma);
+        f12 = 0.5*( MIN(MAX(phi[i][1],-1.0),0.0) + MIN(MAX(phi[j][1],-1.0),0.0) );
+        eng_one = 4.0*par[0]*(1-par[1]*f12)*(pow(sigma,16.0) - sigma*sigma);
         eng += eng_one;
 //        printf("%d %d %f\n", i+1, j+1, eng_one);
       }
@@ -934,9 +936,8 @@ int main()
   int n_tot = n_mem + n_prot;
 
   double lucy_pars[] = {1.195, 0.239, 136.0};
-  double lj216_pars[] = {1.553537, 0.0, 68.0, 136.0};
+  double lj216_pars[] = {1.553537, 0.5, 68.0, 136.0};
   double bend_pars[] = {2.50956, 0.5, 68.0, 0.009, 136.0};
-  double bend_pars_nospam[] = {2.50956, 0.0, 68.0, 0.009, 136.0};
   double olig_pars[] = {0.5, 1.0, 136.0};
   double ic_pars[] = {0.06, 1.195, 0.009, 136.0};
   double cc_pars[] = {9.56022944, 2.0};
@@ -985,7 +986,6 @@ int main()
 
   double dx = 0.00001;
   double dp = 0.00001;
-//  double dph = 0.0001;
   double dph = 0.00001;
 
   // Making pair lists
@@ -997,9 +997,9 @@ int main()
   printf("Makeing mem pair list ...\n");
   int npair_mem = plist_mem.make_pair_list(rcutsq, atoms, n_mem);
   printf("Makeing all pair list ...\n");
-  int npair_all = plist_all.make_pair_list(rcutsq, atoms, n_tot);
+//  int npair_all = plist_all.make_pair_list(rcutsq, atoms, n_tot);
 
-  printf("npair_mem=%d npair_all=%d\n",npair_mem,npair_all);
+//  printf("npair_mem=%d npair_all=%d\n",npair_mem,npair_all);
 
   double eng=0.0;
   eng = lj216_pot(lj216_pars, atoms, plist_mem);
@@ -1036,6 +1036,9 @@ int main()
 //  calc_dphi_one(0, dph, bend_pars, &bend_pot, atoms, plist_mem);
 //  calc_dphi(dph, bend_pars, &bend_pot, atoms, plist_mem);
 
+//  calc_force(dx, lj216_pars, &lj216_pot, atoms, plist_mem);
+  calc_dphi(dph, lj216_pars, &lj216_pot, atoms, plist_mem);
+
 //  calc_force_one(0, dx, ic_pars, &ic_pot, atoms, plist_mem);
 //  calc_torque_one(0, dp, ic_pars, &ic_pot, atoms, plist_mem);
 //  calc_dphi_one(0, dph, ic_pars, &ic_pot, atoms, plist_mem);
@@ -1046,10 +1049,11 @@ int main()
 //  calc_dphi(dph, cc_pars, &cc_pot, atoms, plist_mem);
 
 //  calc_dphi(dph, mem_comp_pars, &mem_comp_pot, atoms, plist_mem);
-  calc_dphi(dph, prot_comp_pars, &prot_comp_pot, atoms, plist_all);
+//  calc_dphi(dph, prot_comp_pars, &prot_comp_pot, atoms, plist_all);
 
 //  calc_dphi_grad_pots(dph, grad_pars, &grad_pots, atoms, plist_all);
 //  calc_dphi_grad_pots(dph, grad_pars, &grad_pots, atoms, plist_all);
+
 
 /*  double **rho = (double **)malloc(n_tot * sizeof(double *));
   double **xi_m = (double **)malloc(n_tot * sizeof(double *));
@@ -1069,6 +1073,7 @@ int main()
 //    printf("%d %f %f\n", i+1, rho[i][0], rho[i][1]);
 //    printf("%d %f %f %f %f %f %f\n", i+1, xi_m[i][0], xi_m[i][1], xi_m[i][2], xi_b[i][0], xi_b[i][1], xi_b[i][2]);
 //  }
+
 
   for (i = 0; i < n_tot; i++) {
     free(rho[i]);
