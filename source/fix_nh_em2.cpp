@@ -57,6 +57,8 @@ FixNHEM2::~FixNHEM2()
     memory->destroy(mem_flag);
     memory->destroy(prot_flag);
   }
+
+  delete [] conf_file;
 }
 
 /* ---------------------------------------------------------------------- */

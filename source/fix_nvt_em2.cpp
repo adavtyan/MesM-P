@@ -42,12 +42,13 @@ FixNVTEM2::FixNVTEM2(LAMMPS *lmp, int narg, char **arg) :
   strcpy(id_temp,id);
   strcat(id_temp,"_temp");
 
-  char **newarg = new char*[3];
+  char **newarg = new char*[4];
   newarg[0] = id_temp;
   newarg[1] = group->names[igroup];
   newarg[2] = (char *) "temp/em2";
+  newarg[3] = arg[narg-1];
 
-  modify->add_compute(3,newarg);
+  modify->add_compute(4,newarg);
   delete [] newarg;
   tflag = 1;
 }
