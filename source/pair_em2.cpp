@@ -934,7 +934,9 @@ void PairEM2::compute(int eflag, int vflag)
     // Only dphi_b and energy are calculated
     // The pair term is treated in the double loop above
     if (spam_flag && ic_pot_flag[itype]) {
-      if (eflag) one_eng += ic_lambda_m[itype]*MIN(MAX(iphi_b,-1.0),1.0);
+      eng = ic_lambda_m[itype]*MIN(MAX(iphi_b,-1.0),1.0);
+      energy[ET_IC] += eng;
+      if (eflag) one_eng += eng;
 //      printf("itag=%d iphi_b=%f/%f eng=%f\n", atom->tag[i], iphi_b, MIN(MAX(iphi_b,-1.0),1.0), ic_lambda_m[itype]*MIN(MAX(iphi_b,-1.0),1.0));
 
       if (iphi_b>=-1.0 && iphi_b<=1.0) {
@@ -1061,11 +1063,11 @@ void PairEM2::compute(int eflag, int vflag)
     // Subtract stat from dphi
     if (spam_flag) {
       
-        if (atom->tag[i]==tag_debug)
+//        if (atom->tag[i]==tag_debug)
 //          printf("STAT tagi=%d dpb=%f\n", atom->tag[i], -prot_stat);
 
-      idphi[0] -= mem_stat;
-      idphi[1] -= prot_stat;
+      if (mem_stat_flag[itype]) idphi[0] -= mem_stat;
+      if (prot_stat_flag[itype]) idphi[1] -= prot_stat;
     }
 
     // Velocity times composition gradient
@@ -2088,6 +2090,8 @@ void *PairEM2::extract(const char *str, int &dim)
     nEnergy = nEnergyTerms;
     return (void *) &nEnergy;
   }
+  if (strcmp(str,"mem_stat") == 0) return (void *) &mem_stat;
+  if (strcmp(str,"prot_stat") == 0) return (void *) &prot_stat;
 
   dim = 1;
   if (strcmp(str,"rho_m") == 0) return (void *) rho_m;

@@ -11,53 +11,41 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#ifndef LMP_FIX_NH_EM2_H
-#define LMP_FIX_NH_EM2_H
+#ifdef COMPUTE_CLASS
 
-#include "fix_nh.h"
+ComputeStyle(em2_stat,ComputeEM2Stat)
+
+#else
+
+#ifndef LMP_COMPUTE_EM2_STAT_H
+#define LMP_COMPUTE_EM2_STAT_H
+
+#include "compute.h"
 
 namespace LAMMPS_NS {
 
-class FixNHEM2 : public FixNH {
+class ComputeEM2Stat : public Compute {
  public:
-  FixNHEM2(class LAMMPS *, int, char **);
-  virtual ~FixNHEM2();
+  ComputeEM2Stat(class LAMMPS *, int, char **);
+  ~ComputeEM2Stat();
   void init();
-  void final_integrate();
-//  void reset_dt();
+  void compute_vector();
 
- protected:
-  class AtomVecEM2 *avec;
-  int allocated;
-  char *conf_file;
-
-  void nve_v();
-  void nve_x();
-  void nh_v_temp();
-
-  // per-type arrays
-  double **inertia;
-  int *quat_flag;
-  int *mem_flag;
-  int *prot_flag;
-
-  void read_conf_file(char *filename);
-  void allocate();
-  char *ltrim(char *s);
-  char *rtrim(char *s);
-  char *trim(char *s);
-  bool isEmptyString(char *str);
-  inline void print_log(char *line);
+private:
+  double mem_stat, prot_stat;
 };
 
 }
 
 #endif
+#endif
 
 /* ERROR/WARNING messages:
 
-E: Compute nvt/nph/npt em2 requires atom style em2
+E: Illegal ... command
 
-Self-explanatory.
+Self-explanatory.  Check the input script syntax and compare to the
+documentation for the command.  You can use -echo screen as a
+command-line option when running LAMMPS to see the offending line.
 
 */

@@ -11,7 +11,7 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-#include "compute_em2_energy.h"
+#include "compute_em2_stat.h"
 #include "update.h"
 #include "group.h"
 #include "error.h"
@@ -25,51 +25,52 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeEM2Energy::ComputeEM2Energy(LAMMPS *lmp, int narg, char **arg) :
+ComputeEM2Stat::ComputeEM2Stat(LAMMPS *lmp, int narg, char **arg) :
   Compute(lmp, narg, arg)
 {
   if (narg != 3) error->all(FLERR,"Illegal compute com command");
 
-  int itmp;
   if (force->pair == NULL)
-    error->all(FLERR,"compute em2_energy command is incompatible with Pair style");
-  n_energy = *((int*) force->pair->extract("nenergy",itmp));
-  energy = (double *) force->pair->extract("energy",itmp);
-  if (!energy)
-    error->all(FLERR,"compute em2_energy command is incompatible with Pair style");
+    error->all(FLERR,"compute em2_stat command is incompatible with Pair style");
+
+  if (strcmp(force->pair_style,"em2") != 0)
+    error->all(FLERR,"compute em2_stat command is incompatible with Pair style");
 
   vector_flag = 1;
-  size_vector = n_energy;
+  size_vector = 2;
   extvector = 0;
 
-  vector = new double[n_energy];
+  vector = new double[size_vector];
 }
 
 /* ---------------------------------------------------------------------- */
 
-ComputeEM2Energy::~ComputeEM2Energy()
+ComputeEM2Stat::~ComputeEM2Stat()
 {
   delete [] vector;
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeEM2Energy::init()
+void ComputeEM2Stat::init()
 {
   int count = 0;
   for (int i = 0; i < modify->ncompute; i++)
-    if (strcmp(modify->compute[i]->style,"em2_energy") == 0) count++;
+    if (strcmp(modify->compute[i]->style,"em2_stat") == 0) count++;
   if (count > 1 && comm->me == 0)
-    error->warning(FLERR,"More than one compute em2_energy");
+    error->warning(FLERR,"More than one compute em2_stat");
 }
 
 /* ---------------------------------------------------------------------- */
 
-void ComputeEM2Energy::compute_vector()
+void ComputeEM2Stat::compute_vector()
 {
   invoked_vector = update->ntimestep;
 
-  for (int i=0;i<n_energy;++i) {
-    vector[i] = energy[i];
-  }
+  int itmp;
+  mem_stat = *((double*) force->pair->extract("mem_stat",itmp));
+  prot_stat = *((double*) force->pair->extract("prot_stat",itmp));
+
+  vector[0] = mem_stat;
+  vector[1] = prot_stat;
 }

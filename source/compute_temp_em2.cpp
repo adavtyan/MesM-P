@@ -168,16 +168,41 @@ void ComputeTempEM2::dof_compute()
   // assume full rotation of extended particles
   // user should correct this via compute_modify if needed
 
+  int itype;
+  int count,count_all;
+
+  int *mask = atom->mask;
+  int *type = atom->type;
+  int nlocal = atom->nlocal;
+
   double natoms = group->count(igroup);
-  int nper;
+  count = 0;
   if (domain->dimension == 3) {
-    if (mode == ALL) nper = 6;
-    else nper = 3;
+    for (int i = 0; i < nlocal; i++)
+      if (mask[i] & groupbit) {
+        itype = type[i];
+        if (quat_flag[itype]) {
+          if (mode == ALL) count += 6;
+          else count += 3;
+        } else {
+          if (mode == ALL) count += 3;
+        }
+      }
   } else {
-    if (mode == ALL) nper = 3;
-    else nper = 1;
+    for (int i = 0; i < nlocal; i++)
+      if (mask[i] & groupbit) {
+        itype = type[i];
+        if (quat_flag[itype]) {
+          if (mode == ALL) count += 3;
+          else count += 1;
+        } else {
+          if (mode == ALL) count += 2;
+        }
+      }
   }
-  dof = nper*natoms;
+
+  MPI_Allreduce(&count,&count_all,1,MPI_INT,MPI_SUM,world);
+  dof = count_all;
 
   // additional adjustments to dof
 
@@ -185,18 +210,40 @@ void ComputeTempEM2::dof_compute()
     if (mode == ALL) dof -= tbias->dof_remove(-1) * natoms;
 
   } else if (tempbias == 2) {
-    int *mask = atom->mask;
-    int nlocal = atom->nlocal;
 
     tbias->dof_remove_pre();
 
-    int count = 0;
-    for (int i = 0; i < nlocal; i++)
-      if (mask[i] & groupbit)
-        if (tbias->dof_remove(i)) count++;
-    int count_all;
+    count = 0;
+    if (domain->dimension == 3) {
+      for (int i = 0; i < nlocal; i++)
+        if (mask[i] & groupbit) {
+          if (tbias->dof_remove(i)) {
+            itype = type[i];
+            if (quat_flag[itype]) {
+              if (mode == ALL) count += 6;
+              else count += 3;
+            } else {
+              if (mode == ALL) count += 3;
+            }
+          }
+        }
+    } else {
+      for (int i = 0; i < nlocal; i++)
+        if (mask[i] & groupbit) {
+          if (tbias->dof_remove(i)) {
+            itype = type[i];
+            if (quat_flag[itype]) {
+              if (mode == ALL) count += 3;
+              else count += 1;
+            } else {
+              if (mode == ALL) count += 2;
+            }
+          }
+        }
+    }
+
     MPI_Allreduce(&count,&count_all,1,MPI_INT,MPI_SUM,world);
-    dof -= nper*count_all;
+    dof -= count_all;
   }
 
   dof -= extra_dof + fix_dof;
@@ -245,18 +292,22 @@ double ComputeTempEM2::compute_scalar()
           t += (v[i][0]*v[i][0] + v[i][1]*v[i][1] + v[i][2]*v[i][2]) * mass[itype];
         }
 
-        quat = bonus[i].quat;
-        inertia_i = inertia[itype];
+        // rotational contribution
 
-        // wbody = angular velocity in body frame
+        if (quat_flag[itype]) {
+          quat = bonus[i].quat;
+          inertia_i = inertia[itype];
 
-        MathExtra::quat_to_mat(quat,rot);
-        MathExtra::transpose_matvec(rot,angmom[i],wbody);
-        wbody[0] /= inertia_i[0];
-        wbody[1] /= inertia_i[1];
-        wbody[2] /= inertia_i[2];
+          // wbody = angular velocity in body frame
 
-        t += inertia_i[0]*wbody[0]*wbody[0] + inertia_i[1]*wbody[1]*wbody[1] + inertia_i[2]*wbody[2]*wbody[2];
+          MathExtra::quat_to_mat(quat,rot);
+          MathExtra::transpose_matvec(rot,angmom[i],wbody);
+          wbody[0] /= inertia_i[0];
+          wbody[1] /= inertia_i[1];
+          wbody[2] /= inertia_i[2];
+
+          t += inertia_i[0]*wbody[0]*wbody[0] + inertia_i[1]*wbody[1]*wbody[1] + inertia_i[2]*wbody[2]*wbody[2];
+        }
       }
 
   } else {
@@ -264,18 +315,22 @@ double ComputeTempEM2::compute_scalar()
       if (mask[i] & groupbit) {
         itype = type[i];
 
-        quat = bonus[i].quat;
-        inertia_i = inertia[itype];
+        // rotational contribution
 
-        // wbody = angular velocity in body frame
+        if (quat_flag[itype]) {
+          quat = bonus[i].quat;
+          inertia_i = inertia[itype];
 
-        MathExtra::quat_to_mat(quat,rot);
-        MathExtra::transpose_matvec(rot,angmom[i],wbody);
-        wbody[0] /= inertia_i[0];
-        wbody[1] /= inertia_i[1];
-        wbody[2] /= inertia_i[2];
+          // wbody = angular velocity in body frame
 
-        t += inertia_i[0]*wbody[0]*wbody[0] + inertia_i[1]*wbody[1]*wbody[1] + inertia_i[2]*wbody[2]*wbody[2];
+          MathExtra::quat_to_mat(quat,rot);
+          MathExtra::transpose_matvec(rot,angmom[i],wbody);
+          wbody[0] /= inertia_i[0];
+          wbody[1] /= inertia_i[1];
+          wbody[2] /= inertia_i[2];
+
+          t += inertia_i[0]*wbody[0]*wbody[0] + inertia_i[1]*wbody[1]*wbody[1] + inertia_i[2]*wbody[2]*wbody[2];
+        }
       }
   }
 
@@ -284,6 +339,7 @@ double ComputeTempEM2::compute_scalar()
   MPI_Allreduce(&t,&scalar,1,MPI_DOUBLE,MPI_SUM,world);
   if (dynamic || tempbias == 2) dof_compute();
   scalar *= tfactor;
+//  printf("COMPUTE TEMP SCALAR: tfactor=%f scalar=%f\n", tfactor, scalar);
   return scalar;
 }
 
@@ -337,25 +393,27 @@ void ComputeTempEM2::compute_vector()
         t[4] += massone * v[i][0]*v[i][2];
         t[5] += massone * v[i][1]*v[i][2];
 
-        quat = bonus[i].quat;
-        inertia_i = inertia[itype];
+        if (quat_flag[itype]) {
+          quat = bonus[i].quat;
+          inertia_i = inertia[itype];
 
-        // wbody = angular velocity in body frame
+          // wbody = angular velocity in body frame
 
-        MathExtra::quat_to_mat(quat,rot);
-        MathExtra::transpose_matvec(rot,angmom[i],wbody);
-        wbody[0] /= inertia_i[0];
-        wbody[1] /= inertia_i[1];
-        wbody[2] /= inertia_i[2];
+          MathExtra::quat_to_mat(quat,rot);
+          MathExtra::transpose_matvec(rot,angmom[i],wbody);
+          wbody[0] /= inertia_i[0];
+          wbody[1] /= inertia_i[1];
+          wbody[2] /= inertia_i[2];
 
-        // rotational kinetic energy
+          // rotational kinetic energy
 
-        t[0] += inertia_i[0]*wbody[0]*wbody[0];
-        t[1] += inertia_i[1]*wbody[1]*wbody[1];
-        t[2] += inertia_i[2]*wbody[2]*wbody[2];
-        t[3] += inertia_i[0]*wbody[0]*wbody[1];
-        t[4] += inertia_i[1]*wbody[0]*wbody[2];
-        t[5] += inertia_i[2]*wbody[1]*wbody[2];
+          t[0] += inertia_i[0]*wbody[0]*wbody[0];
+          t[1] += inertia_i[1]*wbody[1]*wbody[1];
+          t[2] += inertia_i[2]*wbody[2]*wbody[2];
+          t[3] += inertia_i[0]*wbody[0]*wbody[1];
+          t[4] += inertia_i[1]*wbody[0]*wbody[2];
+          t[5] += inertia_i[2]*wbody[1]*wbody[2];
+        }
       }
 
   } else {
@@ -363,30 +421,27 @@ void ComputeTempEM2::compute_vector()
       if (mask[i] & groupbit) {
         itype = type[i];
 
-        quat = bonus[i].quat;
-        inertia_i = inertia[itype];
+        if (quat_flag[itype]) {
+          quat = bonus[i].quat;
+          inertia_i = inertia[itype];
 
-        if (rmass)
-          massone = rmass[i];
-        else
-          massone = mass[itype];
+          // wbody = angular velocity in body frame
 
-        // wbody = angular velocity in body frame
+          MathExtra::quat_to_mat(quat,rot);
+          MathExtra::transpose_matvec(rot,angmom[i],wbody);
+          wbody[0] /= inertia_i[0];
+          wbody[1] /= inertia_i[1];
+          wbody[2] /= inertia_i[2];
 
-        MathExtra::quat_to_mat(quat,rot);
-        MathExtra::transpose_matvec(rot,angmom[i],wbody);
-        wbody[0] /= inertia_i[0];
-        wbody[1] /= inertia_i[1];
-        wbody[2] /= inertia_i[2];
+          // rotational kinetic energy
 
-        // rotational kinetic energy
-
-        t[0] += inertia_i[0]*wbody[0]*wbody[0];
-        t[1] += inertia_i[1]*wbody[1]*wbody[1];
-        t[2] += inertia_i[2]*wbody[2]*wbody[2];
-        t[3] += inertia_i[0]*wbody[0]*wbody[1];
-        t[4] += inertia_i[1]*wbody[0]*wbody[2];
-        t[5] += inertia_i[2]*wbody[1]*wbody[2];
+          t[0] += inertia_i[0]*wbody[0]*wbody[0];
+          t[1] += inertia_i[1]*wbody[1]*wbody[1];
+          t[2] += inertia_i[2]*wbody[2]*wbody[2];
+          t[3] += inertia_i[0]*wbody[0]*wbody[1];
+          t[4] += inertia_i[1]*wbody[0]*wbody[2];
+          t[5] += inertia_i[2]*wbody[1]*wbody[2];
+        }
       }
   }
 
@@ -394,6 +449,7 @@ void ComputeTempEM2::compute_vector()
 
   MPI_Allreduce(t,vector,6,MPI_DOUBLE,MPI_SUM,world);
   for (i = 0; i < 6; i++) vector[i] *= force->mvv2e;
+//  for (i = 0; i < 6; i++) printf("COMPUTE TEMP VECTOR: vector[%d]=%f\n", i, vector[i]);
 }
 
 /* ----------------------------------------------------------------------

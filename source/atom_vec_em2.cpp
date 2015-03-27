@@ -61,6 +61,9 @@ AtomVecEM2::AtomVecEM2(LAMMPS *lmp) : AtomVec(lmp)
 AtomVecEM2::~AtomVecEM2()
 {
   memory->sfree(bonus);
+  memory->destroy(phi);
+  memory->destroy(phi_half);
+  memory->destroy(dphi);
 }
 
 /* ----------------------------------------------------------------------

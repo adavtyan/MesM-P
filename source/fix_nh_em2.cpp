@@ -85,8 +85,6 @@ void FixNHEM2::init()
 
   FixNH::init();
 
-  dtv2 = 0.5 * dtv;
-
   if (!allocated) allocate();
   read_conf_file(conf_file);
 }
@@ -147,10 +145,6 @@ void FixNHEM2::nve_x()
   int nlocal = atom->nlocal;
   if (igroup == atom->firstgroup) nlocal = atom->nfirst;
 
-  // set timestep here since dt may have changed or come via rRESPA
-
-  dtv2 = 0.5 * dtv;
-
   // update quaternion a full step via Richardson iteration
   // returns new normalized quaternion
   // principal moments of inertia
@@ -164,23 +158,22 @@ void FixNHEM2::nve_x()
       // returns new normalized quaternion
 
       if (quat_flag[itype]) {
-//        inertia = bonus[i].inertia;
         inertia_i = inertia[itype];
         quat = bonus[i].quat;
         MathExtra::mq_to_omega(angmom[i],quat,inertia_i,omega);
-        MathExtra::richardson(quat,angmom[i],omega,inertia_i,dtv2);
+        MathExtra::richardson(quat,angmom[i],omega,inertia_i,dthalf);
       }
 
       // Initial SPAM integration
 
       if (mem_flag[itype]) {
         phi[i][0] = phi_half[i][0] + dtv*dphi[i][0];
-        phi_half[i][0] += dtv2*dphi[i][0];
+        phi_half[i][0] += dthalf*dphi[i][0];
       }
 
       if (prot_flag[itype]) {
         phi[i][1] = phi_half[i][1] + dtv*dphi[i][1];
-        phi_half[i][1] += dtv2*dphi[i][1];
+        phi_half[i][1] += dthalf*dphi[i][1];
       }
     }
 }
@@ -240,21 +233,12 @@ void FixNHEM2::final_integrate()
 
       // Final SPAM integration
 
-      if (mem_flag[itype]) phi_half[i][0] += dtv2*dphi[i][0];
-      if (prot_flag[itype]) phi_half[i][1] += dtv2*dphi[i][1];
+      if (mem_flag[itype]) phi_half[i][0] += dthalf*dphi[i][0];
+      if (prot_flag[itype]) phi_half[i][1] += dthalf*dphi[i][1];
     }
 }
 
 /*-----------------------------------------------------------------------*/
-
-/*void FixNHEM2::reset_dt()
-{
-  FixNH::reset_dt();
-
-  dtv2 = 0.5 * dtv;
-}*/
-
-/* ---------------------------------------------------------------------- */
 
 void FixNHEM2::read_conf_file(char *filename)
 {
