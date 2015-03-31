@@ -269,7 +269,7 @@ void PairEM2::compute(int eflag, int vflag)
         // compute if less than cutoff
 
         // Nummber of neighbours calculation
-        if (rsq < cutsq[itype][jtype]) {
+        if (rsq < cutsq[itype][jtype] &&  ic_pot_flag[itype] && ic_pot_flag[jtype]) {
           n_c[i] += 1.0;
           if (newton_pair || j < nlocal)
             n_c[j] += 1.0;
@@ -691,7 +691,11 @@ void PairEM2::compute(int eflag, int vflag)
         // The one-body term is treated in the single loop bellow
         if (spam_flag && ic_pot_flag[itype] && ic_pot_flag[jtype]) {
 
-          epsilon = ic_lambda_k[itype]*MIN(MAX(iphi_b,-1.0),1.0) + ic_lambda_k[jtype]*MIN(MAX(jphi_b,-1.0),1.0);
+          epsilon = 0.0;
+          if (n_c[i]>0.0) epsilon += ic_lambda_k[itype]*MIN(MAX(iphi_b,-1.0),1.0)/n_c[i];
+          if (n_c[j]>0.0) epsilon += ic_lambda_k[jtype]*MIN(MAX(jphi_b,-1.0),1.0)/n_c[j];
+
+//          epsilon = ic_lambda_k[itype]*MIN(MAX(iphi_b,-1.0),1.0) + ic_lambda_k[jtype]*MIN(MAX(jphi_b,-1.0),1.0);
 
           rinv = 1.0/r;
           r2inv = 1.0/rsq;
@@ -722,9 +726,9 @@ void PairEM2::compute(int eflag, int vflag)
           uij = thetai_gamma_r*thetai_gamma_r + thetaj_gamma_r*thetaj_gamma_r;
 
           // Spherical force
-          fpair = -(thetai_gamma_r*thetai + thetaj_gamma_r*thetaj)*r2inv;
+          fpair = -(uij + thetai_gamma_r*thetai + thetaj_gamma_r*thetaj)*r2inv;
           fpair -= (thetai_gamma_r - thetaj_gamma_r)*(gamma - 2.0*gamma_epsilon*alpha_sq)*rinv;
-          fpair *= 2.0*epsilon;
+          fpair *= 2.0*epsilon*r2inv;
 
           fthi = thetai_gamma_r*rinv;
           fthj = thetaj_gamma_r*rinv;
@@ -737,11 +741,11 @@ void PairEM2::compute(int eflag, int vflag)
           gb_force[1] = fthi*normi[1] + fthj*normj[1] + fali*nti[1] + falj*ntj[1];
           gb_force[2] = fthi*normi[2] + fthj*normj[2] + fali*nti[2] + falj*ntj[2];
 
-          gb_force[0] *= 2.0*epsilon;
-          gb_force[1] *= 2.0*epsilon;
-          gb_force[2] *= 2.0*epsilon;
+          gb_force[0] *= 2.0*epsilon*r2inv;
+          gb_force[1] *= 2.0*epsilon*r2inv;
+          gb_force[2] *= 2.0*epsilon*r2inv;
 
-          eng = -epsilon*uij;
+          eng = -epsilon*rinv*uij;
 
           energy[ET_IC] += eng;
           if (eflag) one_eng += eng;
@@ -755,14 +759,14 @@ void PairEM2::compute(int eflag, int vflag)
           // Calculate torque on particle i
 
           // Torque from derivative over (ru, normi)
-          tor_thi = -2.0*epsilon*thetai_gamma_r;
+          tor_thi = -2.0*epsilon*r2inv*thetai_gamma_r;
           MathExtra::cross3(ru12, normi, torque);
           ttor[0] += tor_thi*torque[0];
           ttor[1] += tor_thi*torque[1];
           ttor[2] += tor_thi*torque[2];
 
           // Torque from derivative over (ru, nti)
-          tor_ali = -2.0*epsilon*fali*r;
+          tor_ali = -2.0*epsilon*r2inv*fali*r;
           MathExtra::cross3(ru12, nti, torque);
           ttor[0] += tor_ali*torque[0];
           ttor[1] += tor_ali*torque[1];
@@ -771,14 +775,14 @@ void PairEM2::compute(int eflag, int vflag)
           // Calculate torque on particle j
 
           // Torque from derivative over (ru, normj)
-          tor_thj = -2.0*epsilon*thetaj_gamma_r;
+          tor_thj = -2.0*epsilon*r2inv*thetaj_gamma_r;
           MathExtra::cross3(ru12, normj, torque);
           rtor[0] += tor_thj*torque[0];
           rtor[1] += tor_thj*torque[1];
           rtor[2] += tor_thj*torque[2];
 
           // Torque from derivative over (ru, ntj)
-          tor_alj = -2.0*epsilon*falj*r;
+          tor_alj = -2.0*epsilon*r2inv*falj*r;
           MathExtra::cross3(ru12, ntj, torque);
           rtor[0] += tor_alj*torque[0];
           rtor[1] += tor_alj*torque[1];
@@ -791,15 +795,16 @@ void PairEM2::compute(int eflag, int vflag)
             // There are two contributions:
             // from the derivative of lambda*phi in front,
             // and from the derivative of gamma
-            dpb = 0.25*epsilon*(thetai_gamma_r - thetaj_gamma_r)*alpha_sq*r;
-            if (iphi_b<=1.0 && iphi_b>=-1.0) {
+            dpb = 0.25*epsilon*r2inv*(thetai_gamma_r - thetaj_gamma_r)*alpha_sq*r;
+//            if (iphi_b<=1.0 && iphi_b>=-1.0) {
+            if (iphi_b<=1.0 && iphi_b>=-1.0 && n_c[i]>0.0) {
 
               if (atom->tag[i]==tag_debug) {
                 printf("IC1 tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], ic_lambda_k[itype]*uij);
                 if (iphi_b<=0.0) printf("IC2 tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], ic_gamma_epsilon[itype]*dpb);
               }
 
-              idphi[1] += ic_lambda_k[itype]*uij;
+              idphi[1] += ic_lambda_k[itype]*uij*r2inv/n_c[i];
               if (iphi_b<=0.0) idphi[1] += ic_gamma_epsilon[itype]*dpb;
             }
             if (newton_pair || j < nlocal) {
@@ -809,8 +814,9 @@ void PairEM2::compute(int eflag, int vflag)
                 if (jphi_b<=0.0) printf("IC2 tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], ic_gamma_epsilon[jtype]*dpb);
               }
 
-              if (jphi_b<=1.0 && jphi_b>=-1.0) {
-                jdphi[1] += ic_lambda_k[jtype]*uij;
+//              if (jphi_b<=1.0 && jphi_b>=-1.0) {
+              if (jphi_b<=1.0 && jphi_b>=-1.0 && n_c[j]>0.0) {
+                jdphi[1] += ic_lambda_k[jtype]*uij*r2inv/n_c[j];
                 if (jphi_b<=0.0) jdphi[1] += ic_gamma_epsilon[jtype]*dpb;
               }
             }
