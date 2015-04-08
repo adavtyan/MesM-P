@@ -92,7 +92,8 @@ PairEM2::~PairEM2()
     memory->destroy(lucy_pot_flag);
     memory->destroy(lucy_epsilon);
     memory->destroy(lucy_sigma);
-    memory->destroy(lucy_sigmasq);
+    memory->destroy(lucy_sigma_inv);
+    memory->destroy(lucy_sigmasq_inv);
     memory->destroy(bend_pot_flag);
     memory->destroy(bend_epsilon);
 //    memory->destroy(bend_sigmasq);
@@ -496,10 +497,10 @@ void PairEM2::compute(int eflag, int vflag)
             // Contribution from the derivative of prefactor
             dpb = 0.5*lj216_k0[itype][jtype]*eng_lj;
 
-            if (atom->tag[i]==tag_debug && (iphi_b<=0.0 && iphi_b>=-1.0))
+/*            if (atom->tag[i]==tag_debug && (iphi_b<=0.0 && iphi_b>=-1.0))
               printf("LJ tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], dpb);
             if (atom->tag[j]==tag_debug && (jphi_b<=0.0 && jphi_b>=-1.0))
-              printf("LJ tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], dpb);
+              printf("LJ tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], dpb);*/
 
             if (iphi_b<=0.0 && iphi_b>=-1.0) idphi[1] += dpb;
             if (jphi_b<=0.0 && jphi_b>=-1.0) jdphi[1] += dpb;
@@ -512,9 +513,9 @@ void PairEM2::compute(int eflag, int vflag)
         if (lucy_pot_flag[itype][jtype] && r<lucy_sigma[itype][jtype]) {
           epsilon = lucy_epsilon[itype][jtype];
 
-          sigma = r/lucy_sigma[itype][jtype];
+          sigma = r*lucy_sigma_inv[itype][jtype];
           epsq2 = epsilon*(1-sigma)*(1-sigma);
-          fpair = 12*epsq2/lucy_sigmasq[itype][jtype];
+          fpair = 12*epsq2*lucy_sigmasq_inv[itype][jtype];
 
           eng = epsq2*(1-sigma)*(1+3*sigma);
 
@@ -1136,7 +1137,8 @@ void PairEM2::allocate()
   memory->create(lucy_pot_flag,n+1,n+1,"pair:lucy_pot_flag");
   memory->create(lucy_epsilon,n+1,n+1,"pair:lucy_epsilon");
   memory->create(lucy_sigma,n+1,n+1,"pair:lucy_sigma");
-  memory->create(lucy_sigmasq,n+1,n+1,"pair:lucy_sigmasq");
+  memory->create(lucy_sigma_inv,n+1,n+1,"pair:lucy_sigma_inv");
+  memory->create(lucy_sigmasq_inv,n+1,n+1,"pair:lucy_sigmasq_inv");
   memory->create(bend_pot_flag,n+1,n+1,"pair:bend_pot_flag");
   memory->create(bend_epsilon,n+1,n+1,"pair:bend_epsilon");
 //  memory->create(bend_sigmasq,n+1,n+1,"pair:bend_sigmasq");
@@ -1634,12 +1636,14 @@ double PairEM2::init_one(int i, int j)
 
     if (lucy_sigma[i][j]>cut[i][j]) error->all(FLERR,"Lucy Excluded Volume cutoff cannot be larger than overal cutoff for a pair type");
 
-    lucy_sigmasq[i][j] = pow(lucy_sigma[i][j], 2.0);
+    lucy_sigma_inv[i][j] = 1.0/lucy_sigma[i][j];
+    lucy_sigmasq_inv[i][j] = 1.0/pow(lucy_sigma[i][j], 2.0);
 
     lucy_pot_flag[j][i] = lucy_pot_flag[i][j];
     lucy_epsilon[j][i] = lucy_epsilon[i][j];
     lucy_sigma[j][i] = lucy_sigma[i][j];
-    lucy_sigmasq[j][i] = lucy_sigmasq[i][j];
+    lucy_sigma_inv[j][i] = lucy_sigma_inv[i][j];
+    lucy_sigmasq_inv[j][i] = lucy_sigmasq_inv[i][j];
   }
 
   if (bend_pot_flag[i][j]) {

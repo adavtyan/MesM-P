@@ -4,4 +4,4 @@
 # All types must be described
 # I Inertia(X Y Z) Quaternion_flag(0/1) Mem_comp_flag(0/1) Prot_comp_flag(0/1)
 1 0.06 0.06 0.06 1 1 1
-2 0.06 0.06 0.06 0 0 1
+2 0.00 0.00 0.00 0 0 1

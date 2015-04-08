@@ -15,7 +15,7 @@ read_data       data.em2
 pair_coeff      * * em2_par_file.dat 136.0
 
 group           mem type 1
-group           prot type 2
+group           sol type 2
 
 variable        st equal step
 variable        epot equal pe
@@ -42,17 +42,34 @@ variable        ecc equal c_em2_eng[7]
 variable        emc equal c_em2_eng[8]
 variable        epc equal c_em2_eng[9]
 
-fix             1 all nve/em2 integration_conf.dat
+# Thermonstating separately membrane and solvent translational, 
+# and membrane rotational degrees of freedom 
+fix             1 mem nvt temp 308 308 100
+fix             2 sol nvt temp 308 308 100
+fix             3 mem nvt/em2/rot temp 308 308 100 integration_conf.dat
+
+# Integrating SPAM degrees of freedom
+fix             4 all em2/spam integration_conf.dat
+
+# Example of overal NVE or NVT integrations
+#fix             1 all nve/em2 integration_conf.dat
 #fix             1 all nvt/em2 temp 308 308 100 integration_conf.dat
-fix             5 all print 100 "${st} ${epot} ${ekin} ${etot}" screen no file energy.dat title "Step Potential_Energy Kinetic_Energy Total_Energy"
-fix             6 all print 100 "${st} ${elj216} ${elucy} ${ebend} ${eolig} ${eic} ${ecc} ${emc} ${epc} ${e2tot}" screen no file energy_em2.dat title "Step LJ216 Lucy Bend Olig IC CC MEM_COMP PROT_COMP EM2_Total"
 
-dump            1 mem custom 1000 dump.lammpstrj id type x y z c_phi[1] c_phi[2] c_nc
-#dump            1 all custom 1000 dump.force id type xs ys zs fx fy fz tqx tqy tqz c_dphi[1] c_dphi[2] c_rho[1] c_rho[2]
+# Printting out overal and per-term EM2 energies
+# In don't have fix print/wzero, replace with fix print
+fix             5 all print/wzero 100 "${st} ${epot} ${ekin} ${etot}" screen no file energy.dat title "Step Potential_Energy Kinetic_Energy Total_Energy"
+fix             6 all print/wzero 100 "${st} ${elj216} ${elucy} ${ebend} ${eolig} ${eic} ${ecc} ${emc} ${epc} ${e2tot}" screen no file energy_em2.dat title "Step LJ216 Lucy Bend Olig IC CC MEM_COMP PROT_COMP EM2_Total"
 
+# Outputting membrane coordinates, SPAM variables, and Nc
+dump            1 mem custom 1000 dump.lammpstrj id type xu yu zu c_phi[1] c_phi[2] c_nc
 dump_modify     1 sort id
 
-thermo          100
+# Example of dump which outputs forces, torques, dphis, and rho densities
+# compute dphi and rho need to be uncommented above
+#dump            2 all custom 1000 dump.force id type xu yu zu fx fy fz tqx tqy tqz c_dphi[1] c_dphi[2] c_rho[1] c_rho[2]
+#dump_modify     2 sort id
+
+thermo          1000
 
 #restart         1000000 restart
 

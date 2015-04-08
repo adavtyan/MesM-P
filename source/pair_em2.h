@@ -59,7 +59,7 @@ class PairEM2 : public Pair {
 
   // Lucy potential parameters
   int **lucy_pot_flag;
-  double **lucy_epsilon, **lucy_sigma, **lucy_sigmasq;
+  double **lucy_epsilon, **lucy_sigma, **lucy_sigma_inv, **lucy_sigmasq_inv;
 
   // Bending potential parameters
   int **bend_pot_flag;
