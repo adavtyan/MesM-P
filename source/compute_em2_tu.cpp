@@ -25,6 +25,7 @@
 #include "pair.h"
 #include "force.h"
 #include "string.h"
+#include "stdlib.h"
 
 using namespace LAMMPS_NS;
 
@@ -57,7 +58,7 @@ ComputeEM2TU::ComputeEM2TU(LAMMPS *lmp, int narg, char **arg) :
   norm0[1] = 0.0;
   norm0[2] = 1.0;
 
-  if (plist==PL_HALF)
+  if (plist==PL_HALF) {
     comm_forward = 2;
     comm_reverse = 2;
   }
