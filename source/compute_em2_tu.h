@@ -29,6 +29,7 @@ class ComputeEM2TU : public Compute {
   ComputeEM2TU(class LAMMPS *, int, char **);
   ~ComputeEM2TU();
   void init();
+  void init_list(int, class NeighList *);
   double compute_scalar();
   double compute_whalf_pl();
   double compute_wfull_pl();
@@ -47,6 +48,7 @@ private:
   double rcutsq;
   double *tu, *nc; // Per-atom arrays
   class AtomVecEM2 *avec;
+  class NeighList *list;
 };
 
 }

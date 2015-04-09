@@ -25,6 +25,7 @@
 #include "pair.h"
 #include "force.h"
 #include "atom.h"
+#include "neighbor.h"
 #include "string.h"
 #include "stdlib.h"
 #include "memory.h"
@@ -87,7 +88,7 @@ void ComputeEM2TU::init()
   
   if (force->pair == NULL)
     error->all(FLERR,"Compute em2_tu requires a pair style be defined");
-  if (sqrt(cutsq) > force->pair->cutforce)
+  if (sqrt(rcutsq) > force->pair->cutforce)
     error->all(FLERR,"Compute em2_tu cutoff is longer than pairwise cutoff");
 
   avec = (AtomVecEM2 *) atom->style_match("em2");
@@ -154,11 +155,12 @@ double ComputeEM2TU::compute_whalf_pl()
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
   int nall = nlocal + atom->nghost;
+  int newton_pair = force->newton_pair;
   
   int npall = newton_pair ? nall : nlocal;
   
   for (i=0; i < npall; i++) {
-    if ((mask[i] & groupbit))
+    if ((mask[i] & groupbit)) {
       tu[i] = 0.0;
       nc[i] = 0.0;
     }
