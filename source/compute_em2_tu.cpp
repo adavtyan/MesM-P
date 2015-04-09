@@ -26,10 +26,13 @@
 #include "force.h"
 #include "atom.h"
 #include "neighbor.h"
+#include "neigh_request.h"
+#include "neigh_list.h"
 #include "string.h"
 #include "stdlib.h"
 #include "memory.h"
 #include "math.h"
+#include "math_extra.h"
 
 using namespace LAMMPS_NS;
 
@@ -248,7 +251,7 @@ double ComputeEM2TU::compute_wfull_pl()
   int nlocal = atom->nlocal;
   
   for (i=0; i < nlocal; i++) {
-    if ((mask[i] & groupbit))
+    if ((mask[i] & groupbit)) {
       tu[i] = 0.0;
       nc[i] = 0.0;
     }
