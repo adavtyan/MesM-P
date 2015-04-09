@@ -183,7 +183,7 @@ void PairEM2::compute(int eflag, int vflag)
   int newton_pair = force->newton_pair;
 
   // Number of atoms involved in pair calculations
-  double npall = newton_pair ? nall : nlocal;
+  int npall = newton_pair ? nall : nlocal;
 
   for (int i=0;i<nEnergyTerms;++i) energy[i] = 0.0;
 

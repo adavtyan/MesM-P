@@ -30,9 +30,21 @@ class ComputeEM2TU : public Compute {
   ~ComputeEM2TU();
   void init();
   double compute_scalar();
+  double compute_whalf_pl();
+  double compute_wfull_pl();
+  int pack_forward_comm(int, int *, double *, int, int *);
+  void unpack_forward_comm(int, int, double *);
+  int pack_reverse_comm(int, int, double *);
+  void unpack_reverse_comm(int, int *, double *);
+  double memory_usage();
 
 private:
+  enum{PL_HALF=0, PL_FULL};
+  int plist; // Use half or full pair list
+  
   int nmax;
+  double norm0[3];
+  double rcutsq;
   double *tu, *nc; // Per-atom arrays
   class AtomVecEM2 *avec;
 };
