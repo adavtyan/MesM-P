@@ -26,6 +26,8 @@
 #include "force.h"
 #include "string.h"
 #include "stdlib.h"
+#include "memory.h"
+#include "math.h"
 
 using namespace LAMMPS_NS;
 
