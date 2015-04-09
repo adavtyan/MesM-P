@@ -24,6 +24,7 @@
 #include "modify.h"
 #include "pair.h"
 #include "force.h"
+#include "atom.h"
 #include "string.h"
 #include "stdlib.h"
 #include "memory.h"
