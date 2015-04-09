@@ -107,6 +107,9 @@ void ComputeEM2TU::init()
     neighbor->requests[irequest]->half = 0;
     neighbor->requests[irequest]->full = 1;
   }
+  
+  ngcnt = group->count(igroup);
+  if (ngcnt==0) error->all(FLERR,"Group is empty in compute em2_tu");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -232,6 +235,8 @@ double ComputeEM2TU::compute_whalf_pl()
   
   MPI_Allreduce(&tu_one,&tu_sum,1,MPI_DOUBLE,MPI_SUM,world);
   
+  tu_sum /= ngcnt;
+  
   return tu_sum;
 }
 
@@ -312,6 +317,8 @@ double ComputeEM2TU::compute_wfull_pl()
   }
   
   MPI_Allreduce(&tu_one,&tu_sum,1,MPI_DOUBLE,MPI_SUM,world);
+  
+  tu_sum /= ngcnt;
   
   return tu_sum;
 }

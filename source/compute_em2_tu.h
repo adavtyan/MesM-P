@@ -44,6 +44,7 @@ private:
   int plist; // Use half or full pair list
   
   int nmax;
+  bigint ngcnt;
   double norm0[3];
   double rcutsq;
   double *tu, *nc; // Per-atom arrays
