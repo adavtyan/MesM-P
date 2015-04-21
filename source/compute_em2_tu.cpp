@@ -152,7 +152,7 @@ double ComputeEM2TU::compute_whalf_pl()
   double xtmp,ytmp,ztmp,delx,dely,delz,rsq;
   int *ilist,*jlist,*numneigh,**firstneigh;
   
-  double tu_one, tu_sum, quat_dot;
+  double tu_one, quat_dot;
   double *iquat, *jquat;
   double ai[3][3],aj[3][3],normi[3],normj[3];
 
@@ -233,11 +233,11 @@ double ComputeEM2TU::compute_whalf_pl()
     }
   }
   
-  MPI_Allreduce(&tu_one,&tu_sum,1,MPI_DOUBLE,MPI_SUM,world);
-  
-  tu_sum /= ngcnt;
-  
-  return tu_sum;
+  MPI_Allreduce(&tu_one,&scalar,1,MPI_DOUBLE,MPI_SUM,world);
+
+  scalar /= ngcnt;
+
+  return scalar;
 }
 
 double ComputeEM2TU::compute_wfull_pl()
@@ -246,7 +246,7 @@ double ComputeEM2TU::compute_wfull_pl()
   double xtmp,ytmp,ztmp,delx,dely,delz,rsq;
   int *ilist,*jlist,*numneigh,**firstneigh;
   
-  double tu_one, tu_sum, quat_dot;
+  double tu_one, quat_dot;
   double *iquat, *jquat;
   double ai[3][3],aj[3][3],normi[3],normj[3];
 
@@ -316,11 +316,11 @@ double ComputeEM2TU::compute_wfull_pl()
     }
   }
   
-  MPI_Allreduce(&tu_one,&tu_sum,1,MPI_DOUBLE,MPI_SUM,world);
-  
-  tu_sum /= ngcnt;
-  
-  return tu_sum;
+  MPI_Allreduce(&tu_one,&scalar,1,MPI_DOUBLE,MPI_SUM,world);
+
+  scalar /= ngcnt;
+
+  return scalar;
 }
 
 int ComputeEM2TU::pack_forward_comm(int n, int *list, double *buf, int pbc_flag, int *pbc)
