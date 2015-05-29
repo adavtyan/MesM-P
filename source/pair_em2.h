@@ -47,8 +47,6 @@ class PairEM2 : public Pair {
   void unpack_reverse_comm(int, int *, double *);
 
  protected:
-  enum{SPHERE_SPHERE,SPHERE_ELLIPSE,ELLIPSE_SPHERE,ELLIPSE_ELLIPSE};
-
   double cut_global;
   double **cut;
   double norm0[3], nt0[3];
@@ -57,9 +55,21 @@ class PairEM2 : public Pair {
   double **lj216_pot_flag, **lj216_epsilon, **lj216_sigma, **lj216_k0;
   double **lj1,**lj2,**lj3,**lj4;
 
+  // 6-12 LJ-like potential parameters
+  double **lj612_pot_flag, **lj612_epsilon, **lj612_sigma, **lj612_k0;
+  double **lj612_1,**lj612_2,**lj612_3,**lj612_4;
+
   // Lucy potential parameters
   int **lucy_pot_flag;
   double **lucy_epsilon, **lucy_sigma, **lucy_sigma_inv, **lucy_sigmasq_inv;
+
+  // Excluded volume 1/r^12 potential parameters
+  int **ex12_pot_flag;
+  double **ex12_epsilon, **ex12_sigma, **ex12_epsig;
+
+  // Gauss potential parameters 
+  int **gauss_pot_flag;
+  double **gauss_epsilon, **gauss_sigma, **gauss_r0, **gauss_sigmasq_inv;
 
   // Bending potential parameters
   int **bend_pot_flag;
@@ -91,10 +101,14 @@ class PairEM2 : public Pair {
   int comp_flag;
   double comp_rcut, comp_rcut_inv, comp_rcutsq;
 
-  // Composition stat_variables
+  // Composition stat variables
   int *mem_stat_flag, *prot_stat_flag;
   double mem_stat_epsilon, prot_stat_epsilon;
-  double mem_stat, prot_stat; 
+  double mem_stat, prot_stat;
+
+ // Protein Coverage potential variables
+ int *pcov_pot_flag;
+ double pcov_epsilon, pcov_eta0;
 
   // SPAM variables
   int spam_flag; 
@@ -107,9 +121,9 @@ class PairEM2 : public Pair {
   int comm_ind; // Index of communication procedure to invoke
 
   // Per-term energy arrays
-  enum EnergyTerms{ET_TOTAL=0, ET_LJ216, ET_LUCY, ET_BEND, ET_OLIG, ET_IC, ET_CC, ET_MEM_COMP, ET_PROT_COMP, nEnergyTerms};
+  enum EnergyTerms{ET_TOTAL=0, ET_LJ216, ET_LJ612, ET_LUCY, ET_EX12, ET_GAUSS, ET_BEND, ET_OLIG, ET_IC, ET_CC, ET_MEM_COMP, ET_PROT_COMP, ET_PCOV, nEnergyTerms};
   double energy[nEnergyTerms], energy_all[nEnergyTerms];
-  int nEnergy; // Dublicated variable used for extract() function
+  int nEnergy; // Duplicated variable used for extract() function
 
   double **offset;
   class AtomVecEM2 *avec;

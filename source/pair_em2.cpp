@@ -89,14 +89,30 @@ PairEM2::~PairEM2()
     memory->destroy(lj216_epsilon);
     memory->destroy(lj216_sigma);
     memory->destroy(lj216_k0);
+    memory->destroy(lj612_1);
+    memory->destroy(lj612_2);
+    memory->destroy(lj612_3);
+    memory->destroy(lj612_4);
+    memory->destroy(lj612_pot_flag);
+    memory->destroy(lj612_epsilon);
+    memory->destroy(lj612_sigma);
+    memory->destroy(lj612_k0);
     memory->destroy(lucy_pot_flag);
     memory->destroy(lucy_epsilon);
     memory->destroy(lucy_sigma);
     memory->destroy(lucy_sigma_inv);
     memory->destroy(lucy_sigmasq_inv);
+    memory->destroy(ex12_pot_flag);
+    memory->destroy(ex12_epsilon);
+    memory->destroy(ex12_sigma);
+    memory->destroy(ex12_epsig);
+    memory->destroy(gauss_pot_flag);
+    memory->destroy(gauss_epsilon);
+    memory->destroy(gauss_sigma);
+    memory->destroy(gauss_sigmasq_inv);
+    memory->destroy(gauss_r0);
     memory->destroy(bend_pot_flag);
     memory->destroy(bend_epsilon);
-//    memory->destroy(bend_sigmasq);
     memory->destroy(bend_k0);
     memory->destroy(bend_gamma_epsilon);
     memory->destroy(olig_pot_flag);
@@ -117,6 +133,7 @@ PairEM2::~PairEM2()
     memory->destroy(prot_comp_xi_epsilon);
     memory->destroy(mem_stat_flag);
     memory->destroy(prot_stat_flag);
+    memory->destroy(pcov_pot_flag);
 
     memory->destroy(rho_m);
     memory->destroy(rho_b);
@@ -131,7 +148,7 @@ PairEM2::~PairEM2()
 void PairEM2::compute(int eflag, int vflag)
 {
   int i,j,ii,jj,inum,jnum,itype,jtype;
-  double evdwl,one_eng,r,rsq,rinv,r2inv,r4inv,r16inv,fpair,factor_lj,epsilon,sigma,eng,eng_lj;
+  double evdwl,one_eng,r,rsq,rinv,r2inv,r4inv,r6inv,r12inv,r16inv,fpair,factor_lj,epsilon,sigma,eng,eng_lj;
   double fforce[3],gb_force[3],torque[3],ttor[3],rtor[3],r12[3],ru12[3];
   int *ilist,*jlist,*numneigh,**firstneigh;
   double xtmp,ytmp,ztmp;
@@ -149,6 +166,8 @@ void PairEM2::compute(int eflag, int vflag)
   // For Stat calculations
   double sum_phi_m, sum_phi_b, sum_phi_m_all, sum_phi_b_all;
   double n_phi_m, n_phi_b, n_phi_m_all, n_phi_b_all;
+  // For Protein Coverage potential
+  double pcov_sum_phi_b, pcov_n_phi_b, pcov_sum_phi_b_all, pcov_n_phi_b_all;
 
   // Lucy potential
   double epsq2;
@@ -186,14 +205,6 @@ void PairEM2::compute(int eflag, int vflag)
   int npall = newton_pair ? nall : nlocal;
 
   for (int i=0;i<nEnergyTerms;++i) energy[i] = 0.0;
-
-  int tag_debug=491400000;
-  for (i=0;i<nall;i++) {
-    if (atom->tag[i]==tag_debug) {
-      double **phi_half = avec->phi_half;
-      printf("PAIR BEG step=%d id=%d dphi={%f %f} phi={%f %f} phi_half={%f %f}\n", update->ntimestep, atom->tag[i], dphi[i][0], dphi[i][1], phi[i][0], phi[i][1], phi_half[i][0], phi_half[i][1]);
-    }
-  }
 
   inum = list->inum;
   ilist = list->ilist;
@@ -486,7 +497,6 @@ void PairEM2::compute(int eflag, int vflag)
 
           energy[ET_LJ216] += eng;
           if (eflag) one_eng += eng;
-//          printf("%d %d %f\n",atom->tag[i], atom->tag[j], epsilon*eng);
           fforce[0] += r12[0]*fpair;
           fforce[1] += r12[1]*fpair;
           fforce[2] += r12[2]*fpair;
@@ -497,10 +507,37 @@ void PairEM2::compute(int eflag, int vflag)
             // Contribution from the derivative of prefactor
             dpb = 0.5*lj216_k0[itype][jtype]*eng_lj;
 
-/*            if (atom->tag[i]==tag_debug && (iphi_b<=0.0 && iphi_b>=-1.0))
-              printf("LJ tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], dpb);
-            if (atom->tag[j]==tag_debug && (jphi_b<=0.0 && jphi_b>=-1.0))
-              printf("LJ tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], dpb);*/
+            if (iphi_b<=0.0 && iphi_b>=-1.0) idphi[1] += dpb;
+            if (jphi_b<=0.0 && jphi_b>=-1.0) jdphi[1] += dpb;
+          }
+        }
+
+        // 6-12 LJ-like term for membrane-membrane interaction
+        // Forces, energy, and dphi_b are calculated
+        if (lj612_pot_flag[itype][jtype]) {
+          epsilon = 1.0;
+          if (spam_flag) epsilon *= (1 - lj612_k0[itype][jtype]*spam_factor);
+
+          r2inv = 1.0/rsq;
+          r6inv = r2inv*r2inv*r2inv;
+          r12inv = r6inv*r6inv;
+          fpair = epsilon*(r12inv*lj612_1[itype][jtype]-r6inv*lj612_2[itype][jtype]);
+          fpair *= r2inv;
+
+          eng_lj = (r12inv*lj612_3[itype][jtype]-r6inv*lj612_4[itype][jtype]);
+          eng = epsilon*eng_lj;
+
+          energy[ET_LJ612] += eng;
+          if (eflag) one_eng += eng;
+          fforce[0] += r12[0]*fpair;
+          fforce[1] += r12[1]*fpair;
+          fforce[2] += r12[2]*fpair;
+
+          // SPAM variable dynamics
+          // Calculating -dphi/dt for phi_b only
+          if (spam_flag && b_spam_force) {
+            // Contribution from the derivative of prefactor
+            dpb = 0.5*lj612_k0[itype][jtype]*eng_lj;
 
             if (iphi_b<=0.0 && iphi_b>=-1.0) idphi[1] += dpb;
             if (jphi_b<=0.0 && jphi_b>=-1.0) jdphi[1] += dpb;
@@ -521,10 +558,44 @@ void PairEM2::compute(int eflag, int vflag)
 
           energy[ET_LUCY] += eng;
           if (eflag) one_eng += eng;
-//          printf("%d %d %f\n",atom->tag[i], atom->tag[j], epsq2*(1-sigma)*(1+3*sigma));
           fforce[0] += r12[0]*fpair;
           fforce[1] += r12[1]*fpair;
           fforce[2] += r12[2]*fpair; 
+        }
+
+        // Repulsive 1/r^12 term
+        // Only forces and energy are calculated
+        if (ex12_pot_flag[itype][jtype]) {
+          epsilon = ex12_epsig[itype][jtype];
+
+          r2inv = 1.0/rsq;
+          r4inv = r2inv*r2inv;
+          r12inv = r4inv*r4inv*r4inv;
+          fpair = 12.0*epsilon*r12inv;
+          fpair *= r2inv;
+
+          eng = epsilon*r12inv;
+
+          energy[ET_EX12] += eng;
+          if (eflag) one_eng += eng;
+          fforce[0] += r12[0]*fpair;
+          fforce[1] += r12[1]*fpair;
+          fforce[2] += r12[2]*fpair;
+        }
+
+        // Attractive gaussian potential
+        // Only forces and energy are calculated
+        if (gauss_pot_flag[itype][jtype]) {
+          epsilon = gauss_epsilon[itype][jtype];
+
+          eng = -epsilon*exp(-0.5*gauss_sigmasq_inv[itype][jtype]*(r-gauss_r0[itype][jtype])*(r-gauss_r0[itype][jtype]));
+          fpair = eng*gauss_sigmasq_inv[itype][jtype]*(1.0 - gauss_r0[itype][jtype]/r);
+
+          energy[ET_GAUSS] += eng;
+          if (eflag) one_eng += eng;
+          fforce[0] += r12[0]*fpair;
+          fforce[1] += r12[1]*fpair;
+          fforce[2] += r12[2]*fpair;
         }
 
         // Membrane elastic bending energy term
@@ -537,12 +608,6 @@ void PairEM2::compute(int eflag, int vflag)
           // 4.0*epsilon*(1 - k0*( MAX(iphi_b,1.0) + MAX(jphi_b,1.0) ))*(sigma/r)^2
           epsilon_sigmasq_r2inv = bend_epsilon[itype][jtype]*r2inv;
           if (spam_flag) epsilon_sigmasq_r2inv *= (1 - bend_k0[itype][jtype]*spam_factor);
-
-//          if (spam_flag) epsilon_sigmasq_r2inv *= (1 - 0.5*bend_k0[itype][jtype]*(MIN(MAX(iphi_b,-1.0),0.0) + MIN(MAX(jphi_b,-1.0),0.0)));
-
-//          epsilon = 4.0*bend_epsilon[itype][jtype];
-//          if (spam_flag) epsilon *= (1 - 0.5*bend_k0[itype][jtype]*(MIN(MAX(iphi_b,-1.0),0.0) + MIN(MAX(jphi_b,-1.0),0.0)));
-//          epsilon_sigmasq_r2inv = epsilon*(bend_sigmasq[itype][jtype]*r2inv);
 
           ru12[0] = r12[0]*rinv;
           ru12[1] = r12[1]*rinv;
@@ -590,23 +655,15 @@ void PairEM2::compute(int eflag, int vflag)
           gb_force[1] *= 2.0*epsilon_sigmasq_r2inv;
           gb_force[2] *= 2.0*epsilon_sigmasq_r2inv;
 
-//          fpair = -uij*r2inv;
-//          fpair -= (thetai - gamma_r)*(thetai*r2inv + gamma*rinv - 2*gamma_epsilon*alpha_sq*rinv);
-//          fpair -= (thetaj + gamma_r)*(thetaj*r2inv - gamma*rinv + 2*gamma_epsilon*alpha_sq*rinv);
-
           eng = epsilon_sigmasq_r2inv*uij;
 
           energy[ET_BEND] += eng;
           if (eflag) one_eng += eng;
-//          printf("%d %d %f\n",atom->tag[i], atom->tag[j], epsilon_sigmasq_r2inv*uij);
 
           // Adding all forces
           fforce[0] += fpair*r12[0] + gb_force[0];
           fforce[1] += fpair*r12[1] + gb_force[1];
           fforce[2] += fpair*r12[2] + gb_force[2];
-//          fforce[0] += fpair*r12[0] + fthi*thetai[0] + fthj*thetaj[0] + fali*alphai[0] + falj*alphaj[0];
-//          fforce[1] += fpair*r12[1] + fthi*thetai[1] + fthj*thetaj[1] + fali*alphai[1] + falj*alphaj[1];
-//          fforce[2] += fpair*r12[2] + fthi*thetai[2] + fthj*thetaj[2] + fali*alphai[2] + falj*alphaj[2];
 
           // Calculate torque on particle i
 
@@ -649,11 +706,6 @@ void PairEM2::compute(int eflag, int vflag)
             // Contribution from the derivative of gamma
             dpb -= 0.25*epsilon_sigmasq_r2inv*bend_gamma_epsilon[itype][jtype]*(thetai_gamma_r - thetaj_gamma_r)*alpha_sq*r;
             
-            if (atom->tag[i]==tag_debug && (iphi_b<=0.0 && iphi_b>=-1.0))
-              printf("BEND tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], dpb);
-            if (atom->tag[j]==tag_debug && (jphi_b<=0.0 && jphi_b>=-1.0))
-              printf("BEND tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], dpb);
-
             if (iphi_b<=0.0 && iphi_b>=-1.0) idphi[1] += dpb;
             if (jphi_b<=0.0 && jphi_b>=-1.0) jdphi[1] += dpb;
           }
@@ -750,7 +802,6 @@ void PairEM2::compute(int eflag, int vflag)
 
           energy[ET_IC] += eng;
           if (eflag) one_eng += eng;
-//          printf("%d %d %f\n",atom->tag[i], atom->tag[j], -epsilon*uij);
 
           // Adding all forces
           fforce[0] += fpair*r12[0] + gb_force[0];
@@ -797,25 +848,12 @@ void PairEM2::compute(int eflag, int vflag)
             // from the derivative of lambda*phi in front,
             // and from the derivative of gamma
             dpb = 0.25*epsilon*r2inv*(thetai_gamma_r - thetaj_gamma_r)*alpha_sq*r;
-//            if (iphi_b<=1.0 && iphi_b>=-1.0) {
             if (iphi_b<=1.0 && iphi_b>=-1.0 && n_c[i]>0.0) {
-
-              if (atom->tag[i]==tag_debug) {
-                printf("IC1 tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], ic_lambda_k[itype]*uij);
-                if (iphi_b<=0.0) printf("IC2 tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], ic_gamma_epsilon[itype]*dpb);
-              }
 
               idphi[1] += ic_lambda_k[itype]*uij*r2inv/n_c[i];
               if (iphi_b<=0.0) idphi[1] += ic_gamma_epsilon[itype]*dpb;
             }
             if (newton_pair || j < nlocal) {
-
-              if (atom->tag[j]==tag_debug) {
-                printf("IC1 tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], ic_lambda_k[jtype]*uij);
-                if (jphi_b<=0.0) printf("IC2 tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], ic_gamma_epsilon[jtype]*dpb);
-              }
-
-//              if (jphi_b<=1.0 && jphi_b>=-1.0) {
               if (jphi_b<=1.0 && jphi_b>=-1.0 && n_c[j]>0.0) {
                 jdphi[1] += ic_lambda_k[jtype]*uij*r2inv/n_c[j];
                 if (jphi_b<=0.0) jdphi[1] += ic_gamma_epsilon[jtype]*dpb;
@@ -841,13 +879,6 @@ void PairEM2::compute(int eflag, int vflag)
           if (newton_pair || j < nlocal) {
             jdphi[0] -= mem_comp_xi_epsilon[jtype]*mass[itype]*dpm;
           }
-
-/*          if (atom->tag[i]==tag_debug) {
-            printf("tagi=%d tagj=%d irho=%f jrho=%f ixi={%f %f %f} jxi={%f %f %f} r=%f r12={%f %f %f} sigma=%f dw=%f xi_epsilon=%f dphi=%f\n", atom->tag[i], atom->tag[j], rho_m[i], rho_m[j], xi_m[i][0], xi_m[i][1], xi_m[i][2], xi_m[j][0], xi_m[j][1], xi_m[j][2], r, r12[0], r12[1], r12[2], sigma, dw, mem_comp_xi_epsilon[itype]*mass[jtype], mem_comp_xi_epsilon[itype]*mass[jtype]*dpm);
-          }
-          if (atom->tag[j]==tag_debug) {
-            printf("tagi=%d tagj=%d irho=%f jrho=%f ixi={%f %f %f} jxi={%f %f %f} r=%f r12={%f %f %f} sigma=%f dw=%f xi_epsilon=%f dphi=%f\n", atom->tag[i], atom->tag[j], rho_m[i], rho_m[j], xi_m[i][0], xi_m[i][1], xi_m[i][2], xi_m[j][0], xi_m[j][1], xi_m[j][2], r, r12[0], r12[1], r12[2], sigma, dw, mem_comp_xi_epsilon[jtype]*mass[itype], mem_comp_xi_epsilon[jtype]*mass[itype]*dpm);
-          }*/
         }
 
         // Protein Composition potential
@@ -862,22 +893,10 @@ void PairEM2::compute(int eflag, int vflag)
           // dot(xi_b_i+xi_b_j, r12)
           dpb *= (xi_b[i][0]+xi_b[j][0])*r12[0] + (xi_b[i][1]+xi_b[j][1])*r12[1] + (xi_b[i][2]+xi_b[j][2])*r12[2];
 
-            if (atom->tag[i]==tag_debug)
-              printf("PROT_COMP tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], prot_comp_xi_epsilon[itype]*mass[jtype]*dpb);
-            if (atom->tag[j]==tag_debug)
-              printf("PROT_COMP tagi=%d tagj=%d dpb=%f\n", atom->tag[i], atom->tag[j], -prot_comp_xi_epsilon[jtype]*mass[itype]*dpb);
-
           idphi[1] += prot_comp_xi_epsilon[itype]*mass[jtype]*dpb;
           if (newton_pair || j < nlocal) {
             jdphi[1] -= prot_comp_xi_epsilon[jtype]*mass[itype]*dpb;
           }
-
-/*          if (atom->tag[i]==tag_debug) {
-            printf("tagi=%d tagj=%d irho=%f jrho=%f ixi={%f %f %f} jxi={%f %f %f} r=%f r12={%f %f %f} sigma=%f dw=%.12f xi_epsilon=%f dphi=%.12f\n", atom->tag[i], atom->tag[j], rho_b[i], rho_b[j], xi_b[i][0], xi_b[i][1], xi_b[i][2], xi_b[j][0], xi_b[j][1], xi_b[j][2], r, r12[0], r12[1], r12[2], sigma, dw, prot_comp_xi_epsilon[itype]*mass[jtype], prot_comp_xi_epsilon[itype]*mass[jtype]*dpb);
-          }
-          if (atom->tag[j]==tag_debug) {
-            printf("tagi=%d tagj=%d irho=%f jrho=%f ixi={%f %f %f} jxi={%f %f %f} r=%f r12={%f %f %f} sigma=%f dw=%.12f xi_epsilon=%f dphi=%.12f\n", atom->tag[i], atom->tag[j], rho_b[i], rho_b[j], xi_b[i][0], xi_b[i][1], xi_b[i][2], xi_b[j][0], xi_b[j][1], xi_b[j][2], r, r12[0], r12[1], r12[2], sigma, dw, prot_comp_xi_epsilon[jtype]*mass[itype], prot_comp_xi_epsilon[jtype]*mass[itype]*dpb);
-          }*/
         }
 
         fforce[0] *= factor_lj;
@@ -921,6 +940,8 @@ void PairEM2::compute(int eflag, int vflag)
 
   sum_phi_m = sum_phi_b = 0.0;
   n_phi_m = n_phi_b = 0.0;
+  pcov_sum_phi_b = 0.0;
+  pcov_n_phi_b = 0.0;
 
   // One-body terms
   // idphi here is multipied by spam_gamma in the end
@@ -944,14 +965,10 @@ void PairEM2::compute(int eflag, int vflag)
       eng = ic_lambda_m[itype]*MIN(MAX(iphi_b,-1.0),1.0);
       energy[ET_IC] += eng;
       if (eflag) one_eng += eng;
-//      printf("itag=%d iphi_b=%f/%f eng=%f\n", atom->tag[i], iphi_b, MIN(MAX(iphi_b,-1.0),1.0), ic_lambda_m[itype]*MIN(MAX(iphi_b,-1.0),1.0));
 
       if (iphi_b>=-1.0 && iphi_b<=1.0) {
         dpb = -ic_lambda_m[itype];
         idphi[1] += dpb;
-
-        if (atom->tag[i]==tag_debug)
-          printf("IC3 tagi=%d dpb=%f\n", atom->tag[i], dpb);
       }
     }
 
@@ -987,8 +1004,6 @@ void PairEM2::compute(int eflag, int vflag)
       energy[ET_MEM_COMP] += eng;
       if (eflag) one_eng += eng;
 
-//      if (atom->tag[i]==2727) printf("%d %d %f %f %f\n",update->ntimestep,atom->tag[i],iphi_m,dpm,mem_comp_epsilon[itype]*0.1*pow(iphi_m,10.0));
-
       idphi[0] -= dpm;
     }
 
@@ -1000,19 +1015,14 @@ void PairEM2::compute(int eflag, int vflag)
       phi2 = iphi_b*iphi_b;
       phi4 = phi2*phi2;
       dpb = prot_comp_epsilon[itype]*iphi_b*(6.0*phi4 + 2.0);
-//      dpb = prot_comp_epsilon[itype]*(6.0*pow(iphi_b,5.0) + 2.0*iphi_b);
 
       // phi_b gradient term energy
       eng = prot_comp_xi_epsilon[itype]*MathExtra::dot3(xi_b[i],xi_b[i]);
       // Well potential
       eng += prot_comp_epsilon[itype]*phi2*(phi4 + 1.0);
-//      if (eflag) one_eng += prot_comp_epsilon[itype]*(pow(iphi_b,6.0) + pow(iphi_b,2.0));
 
       energy[ET_PROT_COMP] += eng;
       if (eflag) one_eng += eng;
-
-        if (atom->tag[i]==tag_debug)
-          printf("PROT_WELL tagi=%d dpb=%f\n", atom->tag[i], -dpb);
 
       idphi[1] -= dpb;
     }
@@ -1031,6 +1041,13 @@ void PairEM2::compute(int eflag, int vflag)
       n_phi_b += 1.0;
     }
 
+    // Sum over phi_b on the membrane
+    // To be used for Protein Coverage potential
+    if (spam_flag && pcov_pot_flag[itype]) {
+      pcov_sum_phi_b += MIN(MAX(iphi_b,-1.0),1.0);
+      pcov_n_phi_b += 1.0;
+    }
+
     dphi[i][0] += spam_gamma*idphi[0];
     dphi[i][1] += spam_gamma*idphi[1];
 
@@ -1040,25 +1057,39 @@ void PairEM2::compute(int eflag, int vflag)
     if (eflag_atom) eatom[i] += evdwl;
   }
 
-//  printf("STAT_SUM mem_stat=%f prot_stat=%f  sum_phi_m=%f sum_phi_b=%f n_phi_m=%f n_phi_b=%f\n", mem_stat, prot_stat, sum_phi_m, sum_phi_b, n_phi_m, n_phi_b);
-
   MPI_Allreduce(&sum_phi_m,&sum_phi_m_all,1,MPI_DOUBLE,MPI_SUM,world);
   MPI_Allreduce(&sum_phi_b,&sum_phi_b_all,1,MPI_DOUBLE,MPI_SUM,world);
   MPI_Allreduce(&n_phi_m,&n_phi_m_all,1,MPI_DOUBLE,MPI_SUM,world);
   MPI_Allreduce(&n_phi_b,&n_phi_b_all,1,MPI_DOUBLE,MPI_SUM,world);
 
-//  printf("STAT_SUM_ALL mem_stat=%f prot_stat=%f sum_phi_m=%f sum_phi_b=%f n_phi_m=%f n_phi_b=%f\n", mem_stat, prot_stat, sum_phi_m_all, sum_phi_b_all, n_phi_m_all, n_phi_b_all);
+  MPI_Allreduce(&pcov_sum_phi_b,&pcov_sum_phi_b_all,1,MPI_DOUBLE,MPI_SUM,world);
+  MPI_Allreduce(&pcov_n_phi_b,&pcov_n_phi_b_all,1,MPI_DOUBLE,MPI_SUM,world);
+
+  // Protein Coverage potential
+  // Energy calculation
+  if (spam_flag && pcov_n_phi_b_all>0.0) {
+//    if (comm->me==0) printf("step: %d pcov_sum_phi_b_all %f pcov_n_phi_b_all %f\n", update->ntimestep, pcov_sum_phi_b_all, pcov_n_phi_b_all);
+
+    pcov_sum_phi_b_all *= 0.5/pcov_n_phi_b_all;
+
+    if (comm->me==0) {
+      eng = pcov_epsilon*pow(pcov_sum_phi_b_all - 0.5 + pcov_eta0, 2.0);
+      energy[ET_PCOV] += eng;
+      
+//      printf("step: %d pcov_sum_phi_b_all %f pcov_n_phi_b_all %f eng %f\n", update->ntimestep, pcov_sum_phi_b_all, pcov_n_phi_b_all, eng);
+    
+      if (eflag) evdwl = factor_lj*eng;
+
+      if (eflag_global) eng_vdwl += evdwl;
+      if (eflag_atom) eatom[i] += evdwl;
+    }
+  }
 
   // Propogate mem_stat and prot_stat
   // stat += epsilon*sum_phi/n_phi
 
   if (n_phi_m_all>0.0) mem_stat += update->dt*mem_stat_epsilon*sum_phi_m_all/n_phi_m_all;
   if (n_phi_b_all>0.0) prot_stat += update->dt*prot_stat_epsilon*sum_phi_b_all/n_phi_b_all;
-
-//  printf("STAT dstat={%f %f} stat={%f %f}\n", update->dt*mem_stat_epsilon*sum_phi_m_all/n_phi_m_all, update->dt*prot_stat_epsilon*sum_phi_b_all/n_phi_b_all, mem_stat, prot_stat);
-
-//  if(comm->me==0) printf("MEM  STAT step: %d sum_phi: %f n_phi: %f dstat: %f stat: %f\n", update->ntimestep, sum_phi_m_all, n_phi_m_all, update->dt*mem_stat_epsilon*sum_phi_m_all/n_phi_m_all, mem_stat);
-//  if(comm->me==0) printf("PROT STAT step: %d sum_phi: %f n_phi: %f dstat: %f stat: %f\n", update->ntimestep, sum_phi_b_all, n_phi_b_all, update->dt*prot_stat_epsilon*sum_phi_b_all/n_phi_b_all, prot_stat);
 
   // Second one-body loop
   // idphi here is NOT multipied by spam_gamma
@@ -1067,36 +1098,34 @@ void PairEM2::compute(int eflag, int vflag)
 
     idphi[0] = idphi[1] = 0.0;
 
-    // Subtract stat from dphi
     if (spam_flag) {
-      
-//        if (atom->tag[i]==tag_debug)
-//          printf("STAT tagi=%d dpb=%f\n", atom->tag[i], -prot_stat);
+      iphi_m = phi[i][0];
+      iphi_b = phi[i][1];
 
+      // Subtract stat from dphi
       if (mem_stat_flag[itype]) idphi[0] -= mem_stat;
       if (prot_stat_flag[itype]) idphi[1] -= prot_stat;
-    }
 
-    // Velocity times composition gradient
-    // Possibly need to move to integration
-    if (spam_flag && flow_term_flag) {
-//      if (atom->tag[i]==2727) printf("FLOW %d %d %f\n", update->ntimestep, atom->tag[i], MathExtra::dot3(v[i],xi_m[i]));
-      if (mem_comp_pot_flag[itype]) idphi[0] += MathExtra::dot3(v[i],xi_m[i]);
-      if (prot_comp_pot_flag[itype]) idphi[1] += MathExtra::dot3(v[i],xi_b[i]);
+      // Calculating Protein Coverage potential
+      // Only dphi_b will be calculated
+      if (pcov_pot_flag[itype] && pcov_n_phi_b_all>0.0) {
+        if (iphi_b>-1.0 && iphi_b<1.0) {
+          idphi[1] -= pcov_epsilon*(pcov_sum_phi_b_all - 0.5 + pcov_eta0)/pcov_n_phi_b_all;
+//          if (atom->tag[i]==1) printf("step: %d dphi: %f\n",update->ntimestep,pcov_epsilon*(pcov_sum_phi_b_all - 0.5 + pcov_eta0)/pcov_n_phi_b_all);
+          //idphi[1] -= spam_gamma*pcov_epsilon*(pcov_sum_phi_b_all - 0.5 + pcov_eta0)/pcov_n_phi_b_all;
+        }
+      }
 
-      if (atom->tag[i]==tag_debug && prot_comp_pot_flag[itype])
-          printf("VEL tagi=%d dpb=%f\n", atom->tag[i], MathExtra::dot3(v[i],xi_b[i]));
+      // Velocity times composition gradient
+      // Possibly need to move to integration
+      if (flow_term_flag) {
+        if (mem_comp_pot_flag[itype]) idphi[0] += MathExtra::dot3(v[i],xi_m[i]);
+        if (prot_comp_pot_flag[itype]) idphi[1] += MathExtra::dot3(v[i],xi_b[i]);
+      }
     }
 
     dphi[i][0] += idphi[0];
     dphi[i][1] += idphi[1];
-  }
-
-  for (i=0;i<nall;i++) {
-    if (atom->tag[i]==tag_debug) {
-      double **phi_half = avec->phi_half;
-      printf("PAIR END step=%d id=%d dphi={%f %f} phi={%f %f} phi_half={%f %f}\n", update->ntimestep, atom->tag[i], dphi[i][0], dphi[i][1], phi[i][0], phi[i][1], phi_half[i][0], phi_half[i][1]);
-    }
   }
 
   // Sum energies across terms and across processors
@@ -1134,14 +1163,30 @@ void PairEM2::allocate()
   memory->create(lj216_epsilon,n+1,n+1,"pair:lj216_epsilon");
   memory->create(lj216_sigma,n+1,n+1,"pair:lj216_sigma");
   memory->create(lj216_k0,n+1,n+1,"pair:lj216_k0");
+  memory->create(lj612_1,n+1,n+1,"pair:lj612_1");
+  memory->create(lj612_2,n+1,n+1,"pair:lj612_2");
+  memory->create(lj612_3,n+1,n+1,"pair:lj612_3");
+  memory->create(lj612_4,n+1,n+1,"pair:lj612_4");
+  memory->create(lj612_pot_flag,n+1,n+1,"pair:lj612_pot_flag");
+  memory->create(lj612_epsilon,n+1,n+1,"pair:lj612_epsilon");
+  memory->create(lj612_sigma,n+1,n+1,"pair:lj612_sigma");
+  memory->create(lj612_k0,n+1,n+1,"pair:lj612_k0");
   memory->create(lucy_pot_flag,n+1,n+1,"pair:lucy_pot_flag");
   memory->create(lucy_epsilon,n+1,n+1,"pair:lucy_epsilon");
   memory->create(lucy_sigma,n+1,n+1,"pair:lucy_sigma");
   memory->create(lucy_sigma_inv,n+1,n+1,"pair:lucy_sigma_inv");
   memory->create(lucy_sigmasq_inv,n+1,n+1,"pair:lucy_sigmasq_inv");
+  memory->create(ex12_pot_flag,n+1,n+1,"pair:ex12_pot_flag");
+  memory->create(ex12_epsilon,n+1,n+1,"pair:ex12_epsilon");
+  memory->create(ex12_sigma,n+1,n+1,"pair:ex12_sigma");
+  memory->create(ex12_epsig,n+1,n+1,"pair:ex12_epsig");
+  memory->create(gauss_pot_flag,n+1,n+1,"pair:gauss_pot_flag");
+  memory->create(gauss_epsilon,n+1,n+1,"pair:gauss_epsilon");
+  memory->create(gauss_sigma,n+1,n+1,"pair:gauss_sigma");
+  memory->create(gauss_sigmasq_inv,n+1,n+1,"pair:gauss_sigmasq_inv");
+  memory->create(gauss_r0,n+1,n+1,"pair:gauss_r0");
   memory->create(bend_pot_flag,n+1,n+1,"pair:bend_pot_flag");
   memory->create(bend_epsilon,n+1,n+1,"pair:bend_epsilon");
-//  memory->create(bend_sigmasq,n+1,n+1,"pair:bend_sigmasq");
   memory->create(bend_k0,n+1,n+1,"pair:bend_k0");
   memory->create(bend_gamma_epsilon,n+1,n+1,"pair:");
   memory->create(olig_pot_flag,n+1,n+1,"pair:olig_pot_flag");
@@ -1162,6 +1207,7 @@ void PairEM2::allocate()
   memory->create(prot_comp_xi_epsilon,n+1,"pair:prot_comp_xi_epsilon");
   memory->create(mem_stat_flag,n+1,"pair:mem_stat_flag");
   memory->create(prot_stat_flag,n+1,"pair:prot_stat_flag");
+  memory->create(pcov_pot_flag,n+1,"pair:pcov_pot_flag");
 
   comp_flag = 0;
   flow_term_flag = 0;
@@ -1172,9 +1218,13 @@ void PairEM2::allocate()
     prot_comp_pot_flag[i] = 0;
     mem_stat_flag[i] = 0;
     prot_stat_flag[i] = 0;
+    pcov_pot_flag[i] = 0;
     for (int j = 1; j <= n; j++) {
       lj216_pot_flag[i][j] = 0;
+      lj612_pot_flag[i][j] = 0;
       lucy_pot_flag[i][j] = 0;
+      ex12_pot_flag[i][j] = 0;
+      gauss_pot_flag[i][j] = 0;
       bend_pot_flag[i][j] = 0;
       olig_pot_flag[i][j] = 0;
     }
@@ -1253,14 +1303,14 @@ void PairEM2::read_parameters()
   int i, j;
   int ilo,ihi,jlo,jhi;
   double epsilon_val, epsilon2_val, sigma_val, k0_val, geps_val;
-  double lambda_m_val, lambda_k_val, zeta0_val;
+  double lambda_m_val, lambda_k_val, zeta0_val, r0_val;
   int aolig_val;
   int flag1, flag2;
 
   FILE *file;
   int file_state, narg=0, iarg_line=-1;
   char ln[1024], *line, *arg[16];
-  enum File_States{FS_NONE=0, FS_LJ216, FS_LUCY, FS_BEND, FS_OLIG, FS_COUP_IC, FS_COUP_CC, FS_MEM_COMP, FS_BAR_COMP, FS_COMP_CUT, FS_COMP_STAT, FS_FLOW, FS_SPAM};
+  enum File_States{FS_NONE=0, FS_LJ216, FS_LJ612, FS_LUCY, FS_EX12, FS_GAUSS, FS_BEND, FS_OLIG, FS_COUP_IC, FS_COUP_CC, FS_MEM_COMP, FS_BAR_COMP, FS_COMP_CUT, FS_COMP_STAT, FS_FLOW, FS_SPAM, FS_PCOV};
 
   int me = comm->me;
 
@@ -1286,7 +1336,6 @@ void PairEM2::read_parameters()
         arg[narg] = strtok(NULL, " \t\n");
       }
     }
-//    if (narg<2) error->all(FLERR,"Pair_style EM2: Error reading parameter file!");
 
     iarg_line++;
 
@@ -1310,6 +1359,25 @@ void PairEM2::read_parameters()
         }
       }
       break;
+    case FS_LJ612:
+      if (narg!=5) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (LJ612)");
+      if (me==0) print_log("LJ_2-16 potential flag on\n");
+      epsilon_val = atof(arg[2]);
+      k0_val = atof(arg[3]);
+      sigma_val = atof(arg[4]);
+
+      force->bounds(arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(arg[1],atom->ntypes,jlo,jhi);
+
+      for (i = ilo; i <= ihi; i++) {
+        for (j = MAX(jlo,i); j <= jhi; j++) {
+          lj612_pot_flag[i][j] = 1;
+          lj612_epsilon[i][j] = epsilon_val;
+          lj612_k0[i][j] = k0_val;
+          lj612_sigma[i][j] = sigma_val;
+        }
+      }
+      break;
     case FS_LUCY:
       if (narg!=4) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Lucy)");
       if (me==0) print_log("Lucy excluded volume potential flag on\n");
@@ -1324,6 +1392,42 @@ void PairEM2::read_parameters()
           lucy_pot_flag[i][j] = 1;
           lucy_epsilon[i][j] = epsilon_val;
           lucy_sigma[i][j] = sigma_val;
+        }
+      }
+      break;
+    case FS_EX12:
+      if (narg!=4) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Excluded_12)");
+      if (me==0) print_log("Excluded_12 potential flag on\n");
+      epsilon_val = atof(arg[2]);
+      sigma_val = atof(arg[3]);
+
+      force->bounds(arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(arg[1],atom->ntypes,jlo,jhi);
+
+      for (i = ilo; i <= ihi; i++) {
+        for (j = MAX(jlo,i); j <= jhi; j++) {
+          ex12_pot_flag[i][j] = 1;
+          ex12_epsilon[i][j] = epsilon_val;
+          ex12_sigma[i][j] = sigma_val;
+        }
+      }
+      break;
+    case FS_GAUSS:
+      if (narg!=5) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Gauss)");
+      if (me==0) print_log("Gaussian potential flag on\n");
+      epsilon_val = atof(arg[2]);
+      sigma_val = atof(arg[3]);
+      r0_val = atof(arg[4]);
+
+      force->bounds(arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(arg[1],atom->ntypes,jlo,jhi);
+
+      for (i = ilo; i <= ihi; i++) {
+        for (j = MAX(jlo,i); j <= jhi; j++) {
+          gauss_pot_flag[i][j] = 1;
+          gauss_epsilon[i][j] = epsilon_val;
+          gauss_sigma[i][j] = sigma_val;
+          gauss_r0[i][j] = r0_val;
         }
       }
       break;
@@ -1343,7 +1447,6 @@ void PairEM2::read_parameters()
           bend_pot_flag[i][j] = 1;
           bend_epsilon[i][j] = 4.0*epsilon_val*sigma_val*sigma_val; // 4*epsilon*sigma^2
           bend_k0[i][j] = k0_val;
-//          bend_sigmasq[i][j] = sigma_val*sigma_val;
           bend_gamma_epsilon[i][j] = geps_val;
         }
       }
@@ -1455,6 +1558,27 @@ void PairEM2::read_parameters()
         }
       }
       break;
+    case FS_PCOV:
+      if (iarg_line==0) {
+        if (narg!=2) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Protein Coverage Header)");
+        if (me==0) print_log("Reading Protein Coverage Header\n");
+        pcov_epsilon = atof(arg[0]);
+        pcov_eta0 = atof(arg[1]);
+      } else {
+        if (narg!=2) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Protein Coverage)");
+        if (me==0) print_log("Reading Protein Coverage parameters\n");
+        flag1 = atoi(arg[1]);
+
+        if (flag1!=0 && flag1!=1)
+          error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Protein Coverage)");
+
+        force->bounds(arg[0],atom->ntypes,ilo,ihi);
+
+        for (i = ilo; i <= ihi; i++) {
+          pcov_pot_flag[i] = flag1;
+        }
+      }
+      break;
     case FS_FLOW:
       if (iarg_line!=0 || narg!=1) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Flow Term Flag)");
       if (me==0) print_log("Reading Flow Term flag\n");
@@ -1480,8 +1604,14 @@ void PairEM2::read_parameters()
       iarg_line = -1;
       if (strcmp(line, "[Lennard-Jones_2-16]")==0)
         file_state = FS_LJ216;
+      if (strcmp(line, "[Lennard-Jones_6-12]")==0)
+        file_state = FS_LJ612;
       else if (strcmp(line, "[Lucy_Excluded_Volume]")==0)
         file_state = FS_LUCY;
+      else if (strcmp(line, "[Excluded_12]")==0)
+        file_state = FS_EX12;
+      else if (strcmp(line, "[Gaussian]")==0)
+        file_state = FS_GAUSS;
       else if (strcmp(line, "[EM2_Bending]")==0)
         file_state = FS_BEND;
       else if (strcmp(line, "[Oligomerization_Energy]")==0)
@@ -1498,6 +1628,8 @@ void PairEM2::read_parameters()
         file_state = FS_COMP_CUT;
       else if (strcmp(line, "[Composition_Stat]")==0)
         file_state = FS_COMP_STAT;
+      else if (strcmp(line, "[Protein_Coverage]")==0)
+        file_state = FS_PCOV;
       else if (strcmp(line, "[Flow_Term_Flag]")==0)
         file_state = FS_FLOW;
       else if (strcmp(line, "[SPAM_Flag]")==0)
@@ -1597,16 +1729,7 @@ double PairEM2::init_one(int i, int j)
 {
   if (setflag[i][j] == 0) error->all(FLERR,"All pair coeffs are not set");
 
-//  if (setflag[i][j] == 0) cut[i][j] = mix_distance(cut[i][i],cut[j][j]);
-
   if (lj216_pot_flag[i][j]) {
-/*    if (setflag[i][j] == 0) {
-      lj216_pot_flag[i][j] = 1;
-      lj216_epsilon[i][j] = mix_energy(lj216_epsilon[i][i],lj216_epsilon[j][j],
-                                 lj216_sigma[i][i],lj216_sigma[j][j]);
-      lj216_sigma[i][j] = mix_distance(lj216_sigma[i][i],lj216_sigma[j][j]);
-    }*/
-
     lj1[i][j] = 64.0 * lj216_epsilon[i][j] * pow(lj216_sigma[i][j],16.0);
     lj2[i][j] = 8.0 * lj216_epsilon[i][j] * pow(lj216_sigma[i][j],2.0);
     lj3[i][j] = 4.0 * lj216_epsilon[i][j] * pow(lj216_sigma[i][j],16.0);
@@ -1627,13 +1750,28 @@ double PairEM2::init_one(int i, int j)
     offset[j][i] = offset[i][j];
   }
 
-  if (lucy_pot_flag[i][j]) {
-/*    if (setflag[i][j] == 0) {
-      lucy_epsilon[i][j] = mix_energy(lucy_epsilon[i][i],lucy_epsilon[j][j],
-                                 lucy_sigma[i][i],lucy_sigma[j][j]);
-      lucy_sigma[i][j] = mix_distance(lucy_sigma[i][i],lucy_sigma[j][j]);
-    }*/
+  if (lj612_pot_flag[i][j]) {
+    lj612_1[i][j] = 48.0 * lj612_epsilon[i][j] * pow(lj612_sigma[i][j],12.0);
+    lj612_2[i][j] = 24.0 * lj612_epsilon[i][j] * pow(lj612_sigma[i][j],6.0);
+    lj612_3[i][j] = 4.0 * lj612_epsilon[i][j] * pow(lj612_sigma[i][j],12.0);
+    lj612_4[i][j] = 4.0 * lj612_epsilon[i][j] * pow(lj612_sigma[i][j],6.0);
 
+    if (offset_flag) {
+      double ratio = lj612_sigma[i][j] / cut[i][j];
+      offset[i][j] = 4.0 * lj612_epsilon[i][j] * (pow(ratio,12.0) - pow(ratio,6.0));
+    } else offset[i][j] = 0.0;
+
+    lj612_pot_flag[j][i] = lj612_pot_flag[i][j];
+    lj612_epsilon[j][i] = lj612_epsilon[i][j];
+    lj612_sigma[j][i] = lj612_sigma[i][j];
+    lj612_1[j][i] = lj612_1[i][j];
+    lj612_2[j][i] = lj612_2[i][j];
+    lj612_3[j][i] = lj612_3[i][j];
+    lj612_4[j][i] = lj612_4[i][j];
+    offset[j][i] = offset[i][j];
+  }
+
+  if (lucy_pot_flag[i][j]) {
     if (lucy_sigma[i][j]>cut[i][j]) error->all(FLERR,"Lucy Excluded Volume cutoff cannot be larger than overal cutoff for a pair type");
 
     lucy_sigma_inv[i][j] = 1.0/lucy_sigma[i][j];
@@ -1646,28 +1784,33 @@ double PairEM2::init_one(int i, int j)
     lucy_sigmasq_inv[j][i] = lucy_sigmasq_inv[i][j];
   }
 
+  if (ex12_pot_flag[i][j]) {
+    ex12_epsig[i][j] = ex12_epsilon[i][j]*pow(ex12_sigma[i][j],12);
+
+    ex12_pot_flag[j][i] = ex12_pot_flag[i][j];
+    ex12_epsilon[j][i] = ex12_epsilon[i][j];
+    ex12_sigma[j][i] = ex12_sigma[i][j];
+    ex12_epsig[j][i] = ex12_epsig[i][j];
+  }
+
+  if (gauss_pot_flag[i][j]) {
+    gauss_sigmasq_inv[i][j] = 1.0/(gauss_sigma[i][j]*gauss_sigma[i][j]);
+
+    gauss_pot_flag[j][i] = gauss_pot_flag[i][j];
+    gauss_epsilon[j][i] = gauss_epsilon[i][j];
+    gauss_sigma[j][i] = gauss_sigma[i][j];
+    gauss_sigmasq_inv[j][i] = gauss_sigmasq_inv[i][j];
+    gauss_r0[j][i] = gauss_r0[i][j];
+  }
+
   if (bend_pot_flag[i][j]) {
-/*    if (setflag[i][j] == 0) {
-      bend_epsilon[i][j] = mix_energy(bend_epsilon[i][i],bend_epsilon[j][j],
-                                 bend_sigma[i][i],bend_sigma[j][j]);
-      bend_sigma[i][j] = mix_distance(bend_sigma[i][i],bend_sigma[j][j]);
-      bend_k0[i][j] = mix_energy(bend_k0[i][i], bend_k0[j][j], 1.0, 1.0);
-      bend_gamma_epsilon[i][j] = mix_energy(bend_gamma_epsilon[i][i], bend_gamma_epsilon[j][j], 1.0, 1.0);
-    }*/
-   
     bend_pot_flag[j][i] = bend_pot_flag[i][j]; 
     bend_epsilon[j][i] = bend_epsilon[i][j];
-//    bend_sigmasq[j][i] = bend_sigmasq[i][j];
     bend_k0[j][i] = bend_k0[i][j];
     bend_gamma_epsilon[j][i] = bend_gamma_epsilon[i][j];
   }
 
   if (olig_pot_flag[i][j]) {
-/*    if (setflag[i][j] == 0) {
-      olig_epsilon[i][j] = mix_energy(olig_epsilon[i][i], olig_epsilon[j][j], 1.0, 1.0);
-      aolig[i][j] = 1;
-    }*/
-
     if (aolig[i][j]!=1 && aolig[i][j]!=2) error->all(FLERR,"Oligomerization potential energy exponent should either be 1 or 2");
 
     olig_pot_flag[j][i] = olig_pot_flag[i][j];
@@ -1699,6 +1842,7 @@ void PairEM2::write_restart(FILE *fp)
     fwrite(&prot_comp_pot_flag[i],sizeof(int),1,fp);
     fwrite(&mem_stat_flag[i],sizeof(int),1,fp);
     fwrite(&prot_stat_flag[i],sizeof(int),1,fp);
+    fwrite(&pcov_pot_flag[i],sizeof(int),1,fp);
     if (ic_pot_flag[i]) {
       fwrite(&ic_lambda_m[i],sizeof(double),1,fp);
       fwrite(&ic_lambda_k[i],sizeof(double),1,fp);
@@ -1723,7 +1867,10 @@ void PairEM2::write_restart(FILE *fp)
     for (j = i; j <= atom->ntypes; j++) {
       fwrite(&setflag[i][j],sizeof(int),1,fp);
       fwrite(&lj216_pot_flag[i][j],sizeof(int),1,fp);
+      fwrite(&lj612_pot_flag[i][j],sizeof(int),1,fp);
       fwrite(&lucy_pot_flag[i][j],sizeof(int),1,fp);
+      fwrite(&ex12_pot_flag[i][j],sizeof(int),1,fp);
+      fwrite(&gauss_pot_flag[i][j],sizeof(int),1,fp);
       fwrite(&bend_pot_flag[i][j],sizeof(int),1,fp);
       fwrite(&olig_pot_flag[i][j],sizeof(int),1,fp);
       fwrite(&cut[i][j],sizeof(double),1,fp);
@@ -1732,14 +1879,27 @@ void PairEM2::write_restart(FILE *fp)
         fwrite(&lj216_k0[i][j],sizeof(double),1,fp);
         fwrite(&lj216_sigma[i][j],sizeof(double),1,fp);
       }
+      if (lj612_pot_flag[i][j]) {
+        fwrite(&lj612_epsilon[i][j],sizeof(double),1,fp);
+        fwrite(&lj612_k0[i][j],sizeof(double),1,fp);
+        fwrite(&lj612_sigma[i][j],sizeof(double),1,fp);
+      }
       if (lucy_pot_flag[i][j]) {
         fwrite(&lucy_epsilon[i][j],sizeof(double),1,fp);
         fwrite(&lucy_sigma[i][j],sizeof(double),1,fp);
       }
+      if (ex12_pot_flag[i][j]) {
+        fwrite(&ex12_epsilon[i][j],sizeof(double),1,fp);
+        fwrite(&ex12_sigma[i][j],sizeof(double),1,fp);
+      }
+      if (gauss_pot_flag[i][j]) {
+        fwrite(&gauss_epsilon[i][j],sizeof(double),1,fp);
+        fwrite(&gauss_sigma[i][j],sizeof(double),1,fp);
+        fwrite(&gauss_r0[i][j],sizeof(double),1,fp);
+      }
       if (bend_pot_flag[i][j]) {
         fwrite(&bend_epsilon[i][j],sizeof(double),1,fp);
         fwrite(&bend_k0[i][j],sizeof(double),1,fp);
-//        fwrite(&bend_sigmasq[i][j],sizeof(double),1,fp);
         fwrite(&bend_gamma_epsilon[i][j],sizeof(double),1,fp);
       }
       if (olig_pot_flag[i][j]) {
@@ -1771,6 +1931,7 @@ void PairEM2::read_restart(FILE *fp)
       fread(&prot_comp_pot_flag[i],sizeof(int),1,fp);
       fread(&mem_stat_flag[i],sizeof(int),1,fp);
       fread(&prot_stat_flag[i],sizeof(int),1,fp);
+      fread(&pcov_pot_flag[i],sizeof(int),1,fp);
     }
     MPI_Bcast(&ic_pot_flag[i],1,MPI_INT,0,world);
     MPI_Bcast(&cc_pot_flag[i],1,MPI_INT,0,world);
@@ -1778,6 +1939,7 @@ void PairEM2::read_restart(FILE *fp)
     MPI_Bcast(&prot_comp_pot_flag[i],1,MPI_INT,0,world);
     MPI_Bcast(&mem_stat_flag[i],1,MPI_INT,0,world);
     MPI_Bcast(&prot_stat_flag[i],1,MPI_INT,0,world);
+    MPI_Bcast(&pcov_pot_flag[i],1,MPI_INT,0,world);
 
     if (ic_pot_flag[i]) {
       if (me == 0) {
@@ -1826,12 +1988,18 @@ void PairEM2::read_restart(FILE *fp)
 
       if (me == 0) {
         fread(&lj216_pot_flag[i][j],sizeof(int),1,fp);
+        fread(&lj612_pot_flag[i][j],sizeof(int),1,fp);
         fread(&lucy_pot_flag[i][j],sizeof(int),1,fp);
+        fread(&ex12_pot_flag[i][j],sizeof(int),1,fp);
+        fread(&gauss_pot_flag[i][j],sizeof(int),1,fp);
         fread(&bend_pot_flag[i][j],sizeof(int),1,fp);
         fread(&olig_pot_flag[i][j],sizeof(int),1,fp);
       }
       MPI_Bcast(&lj216_pot_flag[i][j],1,MPI_INT,0,world);
+      MPI_Bcast(&lj612_pot_flag[i][j],1,MPI_INT,0,world);
       MPI_Bcast(&lucy_pot_flag[i][j],1,MPI_INT,0,world);
+      MPI_Bcast(&ex12_pot_flag[i][j],1,MPI_INT,0,world);
+      MPI_Bcast(&gauss_pot_flag[i][j],1,MPI_INT,0,world);
       MPI_Bcast(&bend_pot_flag[i][j],1,MPI_INT,0,world);
       MPI_Bcast(&olig_pot_flag[i][j],1,MPI_INT,0,world);
 
@@ -1849,6 +2017,17 @@ void PairEM2::read_restart(FILE *fp)
         MPI_Bcast(&lj216_sigma[i][j],1,MPI_DOUBLE,0,world);
       }
 
+      if (lj612_pot_flag[i][j]) {
+        if (me == 0) {
+          fread(&lj612_epsilon[i][j],sizeof(double),1,fp);
+          fread(&lj612_k0[i][j],sizeof(double),1,fp);
+          fread(&lj612_sigma[i][j],sizeof(double),1,fp);
+        }
+        MPI_Bcast(&lj612_epsilon[i][j],1,MPI_DOUBLE,0,world);
+        MPI_Bcast(&lj612_k0[i][j],1,MPI_DOUBLE,0,world);
+        MPI_Bcast(&lj612_sigma[i][j],1,MPI_DOUBLE,0,world);
+      }
+
       if (lucy_pot_flag[i][j]) {
         if (me == 0) {
           fread(&lucy_epsilon[i][j],sizeof(double),1,fp);
@@ -1858,16 +2037,34 @@ void PairEM2::read_restart(FILE *fp)
         MPI_Bcast(&lucy_sigma[i][j],1,MPI_DOUBLE,0,world);
       }
 
+      if (ex12_pot_flag[i][j]) {
+        if (me == 0) {
+          fread(&ex12_epsilon[i][j],sizeof(double),1,fp);
+          fread(&ex12_sigma[i][j],sizeof(double),1,fp);
+        }
+        MPI_Bcast(&ex12_epsilon[i][j],1,MPI_DOUBLE,0,world);
+        MPI_Bcast(&ex12_sigma[i][j],1,MPI_DOUBLE,0,world);
+      }
+
+      if (gauss_pot_flag[i][j]) {
+        if (me == 0) {
+          fread(&gauss_epsilon[i][j],sizeof(double),1,fp);
+          fread(&gauss_sigma[i][j],sizeof(double),1,fp);
+          fread(&gauss_r0[i][j],sizeof(double),1,fp);
+        }
+        MPI_Bcast(&gauss_epsilon[i][j],1,MPI_DOUBLE,0,world);
+        MPI_Bcast(&gauss_sigma[i][j],1,MPI_DOUBLE,0,world);
+        MPI_Bcast(&gauss_r0[i][j],1,MPI_DOUBLE,0,world);
+      }
+
       if (bend_pot_flag[i][j]) {
         if (me == 0) {
           fread(&bend_epsilon[i][j],sizeof(double),1,fp);
           fread(&bend_k0[i][j],sizeof(double),1,fp);
-//          fread(&bend_sigmasq[i][j],sizeof(double),1,fp);
           fread(&bend_gamma_epsilon[i][j],sizeof(double),1,fp);
         }
         MPI_Bcast(&bend_epsilon[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&bend_k0[i][j],1,MPI_DOUBLE,0,world);
-//        MPI_Bcast(&bend_sigmasq[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&bend_gamma_epsilon[i][j],1,MPI_DOUBLE,0,world);
       }
 
@@ -1899,6 +2096,8 @@ void PairEM2::write_restart_settings(FILE *fp)
   fwrite(&prot_stat_epsilon,sizeof(double),1,fp);
   fwrite(&mem_stat,sizeof(double),1,fp);
   fwrite(&prot_stat,sizeof(double),1,fp);
+  fwrite(&pcov_epsilon,sizeof(double),1,fp);
+  fwrite(&pcov_eta0,sizeof(double),1,fp);
   fwrite(&spam_gamma,sizeof(double),1,fp);
 
   if (comp_flag) {
@@ -1924,6 +2123,8 @@ void PairEM2::read_restart_settings(FILE *fp)
     fread(&prot_stat_epsilon,sizeof(double),1,fp);
     fread(&mem_stat,sizeof(double),1,fp);
     fread(&prot_stat,sizeof(double),1,fp);
+    fread(&pcov_epsilon,sizeof(double),1,fp);
+    fread(&pcov_eta0,sizeof(double),1,fp);
     fread(&spam_gamma,sizeof(double),1,fp);
   }
   MPI_Bcast(&cut_global,1,MPI_DOUBLE,0,world);
@@ -1936,6 +2137,8 @@ void PairEM2::read_restart_settings(FILE *fp)
   MPI_Bcast(&prot_stat_epsilon,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&mem_stat,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&prot_stat,1,MPI_DOUBLE,0,world);
+  MPI_Bcast(&pcov_epsilon,1,MPI_DOUBLE,0,world);
+  MPI_Bcast(&pcov_eta0,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&spam_gamma,1,MPI_DOUBLE,0,world);
 
   if (comp_flag) {
