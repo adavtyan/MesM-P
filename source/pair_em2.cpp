@@ -128,6 +128,9 @@ PairEM2::~PairEM2()
     memory->destroy(mem_comp_pot_flag);
     memory->destroy(mem_comp_epsilon);
     memory->destroy(mem_comp_xi_epsilon);
+    memory->destroy(mem_comp_npoly);
+    memory->destroy(mem_comp_poly_exp);
+    memory->destroy(mem_comp_poly_coeff);
     memory->destroy(prot_comp_pot_flag);
     memory->destroy(prot_comp_epsilon);
     memory->destroy(prot_comp_xi_epsilon);
@@ -1202,6 +1205,9 @@ void PairEM2::allocate()
   memory->create(mem_comp_pot_flag,n+1,"pair:mem_comp_pot_flag");
   memory->create(mem_comp_epsilon,n+1,"pair:mem_comp_epsilon");
   memory->create(mem_comp_xi_epsilon,n+1,"pair:mem_comp_xi_epsilon");
+  memory->create(mem_comp_npoly,n+1,"pair:mem_comp_npoly");
+  memory->create(mem_comp_poly_exp,n+1,1,"pair:mem_comp_poly_exp");
+  memory->create(mem_comp_poly_coeff,n+1,1,"pair:mem_comp_poly_coeff");
   memory->create(prot_comp_pot_flag,n+1,"pair:prot_comp_pot_flag");
   memory->create(prot_comp_epsilon,n+1,"pair:prot_comp_epsilon");
   memory->create(prot_comp_xi_epsilon,n+1,"pair:prot_comp_xi_epsilon");
@@ -1215,6 +1221,7 @@ void PairEM2::allocate()
     ic_pot_flag[i] = 0;
     cc_pot_flag[i] = 0;
     mem_comp_pot_flag[i] = 0;
+    mem_comp_npoly[i] = 0;
     prot_comp_pot_flag[i] = 0;
     mem_stat_flag[i] = 0;
     prot_stat_flag[i] = 0;
@@ -1306,11 +1313,14 @@ void PairEM2::read_parameters()
   double lambda_m_val, lambda_k_val, zeta0_val, r0_val;
   int aolig_val;
   int flag1, flag2;
+  int npol_val;
+  int *pol_exp=NULL;
+  double *pol_coeff=NULL;
 
   FILE *file;
   int file_state, narg=0, iarg_line=-1;
   char ln[1024], *line, *arg[16];
-  enum File_States{FS_NONE=0, FS_LJ216, FS_LJ612, FS_LUCY, FS_EX12, FS_GAUSS, FS_BEND, FS_OLIG, FS_COUP_IC, FS_COUP_CC, FS_MEM_COMP, FS_BAR_COMP, FS_COMP_CUT, FS_COMP_STAT, FS_FLOW, FS_SPAM, FS_PCOV};
+  enum File_States{FS_NONE=0, FS_LJ216, FS_LJ612, FS_LUCY, FS_EX12, FS_GAUSS, FS_BEND, FS_OLIG, FS_COUP_IC, FS_COUP_CC, FS_MEM_COMP, FS_MEM_COMP_POLY, FS_BAR_COMP, FS_COMP_CUT, FS_COMP_STAT, FS_FLOW, FS_SPAM, FS_PCOV};
 
   int me = comm->me;
 
@@ -1499,17 +1509,57 @@ void PairEM2::read_parameters()
       }
       break;
     case FS_MEM_COMP:
-      if (narg!=3) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Membrain Composition Pot)");
-      if (me==0) print_log("Membrain Composition potential flag on\n");
+      if (narg!=3) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Membrane Composition Pot)");
+      if (me==0) print_log("Membrane Composition potential flag on\n");
       epsilon_val = atof(arg[1]);
       epsilon2_val = atof(arg[2]);
 
       force->bounds(arg[0],atom->ntypes,ilo,ihi);
 
       for (i = ilo; i <= ihi; i++) {
+        if (mem_comp_pot_flag[i]==1) error->all(FLERR,"Pair_style EM2: Repeated definition of parameters for a type (Membrane Composition Pot)");
         mem_comp_pot_flag[i] = 1;
         mem_comp_xi_epsilon[i] = epsilon_val;
         mem_comp_epsilon[i] = epsilon2_val;
+      }
+      break;
+    case FS_MEM_COMP_POLY:
+      if (narg<3) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Membrane Composition Poly Pot)");
+      if (me==0) print_log("Membrane Composition Poly potential flag on\n")
+      epsilon_val = atof(arg[1]);
+      npol_val = atoi(arg[2]);
+      if (narg-3!=npol_val+1) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Membrane Composition Poly Pot)");
+    
+      memory->destroy(pol_exp);
+      memory->destroy(pol_coeff);
+      memory->create(pol_exp,npol_val+1,"pair:pol_exp");
+      memory->create(pol_coeff,npol_val+1,"pair:pol_coeff");
+      
+      npol = 0;
+      for (i=0;i<=npol_val;i++) {
+        coeff = atof(arg[3+i]);
+        if (coeff!=0.0) {
+          pol_exp[npol] = i;
+          pol_coeff[npol] = coeff;
+          npol++;
+        }
+      }
+      
+      force->bounds(arg[0],atom->ntypes,ilo,ihi);
+      
+      for (i = ilo; i <= ihi; i++) {
+        if (mem_comp_pot_flag[i]==1) error->all(FLERR,"Pair_style EM2: Repeated definition of parameters for a type (Membrane Composition Poly Pot)");
+        mem_comp_pot_flag[i] = 1;
+        mem_comp_xi_epsilon[i] = epsilon_val;
+        mem_comp_npoly[i] = npol;
+        memory->destroy(mem_comp_poly_exp[i]);
+        memory->destroy(mem_comp_poly_coeff[i]);
+        memory->create(mem_comp_poly_exp,npol[i],"pair:mem_comp_poly_exp");
+        memory->create(mem_comp_poly_coeff,npol[i],"pair:mem_comp_poly_exp");
+        for (j=0;i<npol;i++) {
+          mem_comp_poly_exp[i][j] = pol_exp[j];
+          mem_comp_poly_coeff[i][j] = pol_coeff[ij;
+        }
       }
       break;
     case FS_BAR_COMP:
@@ -1622,7 +1672,9 @@ void PairEM2::read_parameters()
         file_state = FS_COUP_CC;
       else if (strcmp(line, "[Membrane_Composition]")==0)
         file_state = FS_MEM_COMP;
-      else if (strcmp(line, "[Protein_Composition]")==0)
+      else if (strcmp(line, "[Membrane_Composition_Poly]")==0)
+        file_state = FS_MEM_COMP_POLY;
+    else if (strcmp(line, "[Protein_Composition]")==0)
         file_state = FS_BAR_COMP;
       else if (strcmp(line, "[Composition_Cutoff]")==0)
         file_state = FS_COMP_CUT;
@@ -1638,6 +1690,9 @@ void PairEM2::read_parameters()
     }
   }
   fclose(file);
+  
+  memory->destroy(pol_exp);
+  memory->destroy(pol_coeff);
 }
 
 inline void PairEM2::print_log(char *line)
@@ -1839,6 +1894,7 @@ void PairEM2::write_restart(FILE *fp)
     fwrite(&ic_pot_flag[i],sizeof(int),1,fp);
     fwrite(&cc_pot_flag[i],sizeof(int),1,fp);
     fwrite(&mem_comp_pot_flag[i],sizeof(int),1,fp);
+    fwrite(&mem_comp_npoly[i],sizeof(int),1,fp);
     fwrite(&prot_comp_pot_flag[i],sizeof(int),1,fp);
     fwrite(&mem_stat_flag[i],sizeof(int),1,fp);
     fwrite(&prot_stat_flag[i],sizeof(int),1,fp);
@@ -1855,6 +1911,12 @@ void PairEM2::write_restart(FILE *fp)
     if (mem_comp_pot_flag[i]) {
       fwrite(&mem_comp_epsilon[i],sizeof(double),1,fp);
       fwrite(&mem_comp_xi_epsilon[i],sizeof(double),1,fp);
+      if (mem_comp_npoly[i]>0) {
+        for (j=0;j<mem_comp_npoly[i];j++) {
+          fwrite(&mem_comp_poly_exp[i][j],sizeof(int),1,fp);
+          fwrite(&mem_comp_poly_coeff[i][j],sizeof(double),1,fp);
+        }
+      }
     }
     if (prot_comp_pot_flag[i]) {
       fwrite(&prot_comp_epsilon[i],sizeof(double),1,fp);
@@ -1928,6 +1990,7 @@ void PairEM2::read_restart(FILE *fp)
       fread(&ic_pot_flag[i],sizeof(int),1,fp);
       fread(&cc_pot_flag[i],sizeof(int),1,fp);
       fread(&mem_comp_pot_flag[i],sizeof(int),1,fp);
+      fread(&mem_comp_npoly[i],sizeof(int),1,fp);
       fread(&prot_comp_pot_flag[i],sizeof(int),1,fp);
       fread(&mem_stat_flag[i],sizeof(int),1,fp);
       fread(&prot_stat_flag[i],sizeof(int),1,fp);
@@ -1936,6 +1999,7 @@ void PairEM2::read_restart(FILE *fp)
     MPI_Bcast(&ic_pot_flag[i],1,MPI_INT,0,world);
     MPI_Bcast(&cc_pot_flag[i],1,MPI_INT,0,world);
     MPI_Bcast(&mem_comp_pot_flag[i],1,MPI_INT,0,world);
+    MPI_Bcast(&mem_comp_npoly[i],1,MPI_INT,0,world);
     MPI_Bcast(&prot_comp_pot_flag[i],1,MPI_INT,0,world);
     MPI_Bcast(&mem_stat_flag[i],1,MPI_INT,0,world);
     MPI_Bcast(&prot_stat_flag[i],1,MPI_INT,0,world);
@@ -1965,9 +2029,21 @@ void PairEM2::read_restart(FILE *fp)
       if (me == 0) {
         fread(&mem_comp_epsilon[i],sizeof(double),1,fp);
         fread(&mem_comp_xi_epsilon[i],sizeof(double),1,fp);
+        if (mem_comp_npoly[i]>0) {
+          for (j=0;j<mem_comp_npoly[i];j++) {
+            fread(&mem_comp_poly_exp[i][j],sizeof(int),1,fp);
+            fread(&mem_comp_poly_coeff[i][j],sizeof(double),1,fp);
+          }
+        }
       }
       MPI_Bcast(&mem_comp_epsilon[i],1,MPI_DOUBLE,0,world);
       MPI_Bcast(&mem_comp_xi_epsilon[i],1,MPI_DOUBLE,0,world);
+      if (mem_comp_npoly[i]>0) {
+        for (j=0;j<mem_comp_npoly[i];j++) {
+          MPI_Bcast(&mem_comp_poly_exp[i][j],1,MPI_INT,0,world);
+          MPI_Bcast(&mem_comp_poly_coeff[i][j],1,MPI_DOUBLE,0,world);
+        }
+      }
     }
 
     if (prot_comp_pot_flag[i]) {

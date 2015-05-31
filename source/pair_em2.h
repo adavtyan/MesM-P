@@ -96,7 +96,6 @@ class PairEM2 : public Pair {
   // Protein Composition potential parameters
   int *prot_comp_pot_flag;
   double *prot_comp_xi_epsilon, *prot_comp_epsilon;
-//  double prot_comp_rcut_inv, prot_comp_rcutsq;
 
   // Global parameters for Composition Potentials
   int comp_flag;
