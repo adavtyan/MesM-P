@@ -1555,8 +1555,8 @@ void PairEM2::read_parameters()
         mem_comp_npoly[i] = npol;
         memory->destroy(mem_comp_poly_exp[i]);
         memory->destroy(mem_comp_poly_coeff[i]);
-        memory->create(mem_comp_poly_exp,npol[i],"pair:mem_comp_poly_exp");
-        memory->create(mem_comp_poly_coeff,npol[i],"pair:mem_comp_poly_exp");
+        memory->create(mem_comp_poly_exp,npol,"pair:mem_comp_poly_exp");
+        memory->create(mem_comp_poly_coeff,npol,"pair:mem_comp_poly_exp");
         for (j=0;i<npol;i++) {
           mem_comp_poly_exp[i][j] = pol_exp[j];
           mem_comp_poly_coeff[i][j] = pol_coeff[j];
