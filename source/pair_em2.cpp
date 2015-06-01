@@ -1313,7 +1313,8 @@ void PairEM2::read_parameters()
   double lambda_m_val, lambda_k_val, zeta0_val, r0_val;
   int aolig_val;
   int flag1, flag2;
-  int npol_val;
+  int npol_val, npol;
+  double coeff_one;
   int *pol_exp=NULL;
   double *pol_coeff=NULL;
 
@@ -1525,7 +1526,7 @@ void PairEM2::read_parameters()
       break;
     case FS_MEM_COMP_POLY:
       if (narg<3) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Membrane Composition Poly Pot)");
-      if (me==0) print_log("Membrane Composition Poly potential flag on\n")
+      if (me==0) print_log("Membrane Composition Poly potential flag on\n");
       epsilon_val = atof(arg[1]);
       npol_val = atoi(arg[2]);
       if (narg-3!=npol_val+1) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Membrane Composition Poly Pot)");
@@ -1537,10 +1538,10 @@ void PairEM2::read_parameters()
       
       npol = 0;
       for (i=0;i<=npol_val;i++) {
-        coeff = atof(arg[3+i]);
-        if (coeff!=0.0) {
+        coeff_one = atof(arg[3+i]);
+        if (coeff_one!=0.0) {
           pol_exp[npol] = i;
-          pol_coeff[npol] = coeff;
+          pol_coeff[npol] = coeff_one;
           npol++;
         }
       }
@@ -1558,7 +1559,7 @@ void PairEM2::read_parameters()
         memory->create(mem_comp_poly_coeff,npol[i],"pair:mem_comp_poly_exp");
         for (j=0;i<npol;i++) {
           mem_comp_poly_exp[i][j] = pol_exp[j];
-          mem_comp_poly_coeff[i][j] = pol_coeff[ij;
+          mem_comp_poly_coeff[i][j] = pol_coeff[j];
         }
       }
       break;
