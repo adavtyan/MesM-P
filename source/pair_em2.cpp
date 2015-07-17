@@ -63,6 +63,9 @@ PairEM2::PairEM2(LAMMPS *lmp) : Pair(lmp)
   xi_b = NULL;
   n_c = NULL;
 
+  mem_comp_poly_exp = NULL;
+  mem_comp_poly_coeff = NULL;
+
   // set comm size needed by this Pair
 
   comm_forward = 6;
@@ -129,8 +132,6 @@ PairEM2::~PairEM2()
     memory->destroy(mem_comp_epsilon);
     memory->destroy(mem_comp_xi_epsilon);
     memory->destroy(mem_comp_npoly);
-    memory->destroy(mem_comp_poly_exp);
-    memory->destroy(mem_comp_poly_coeff);
     memory->destroy(prot_comp_pot_flag);
     memory->destroy(prot_comp_epsilon);
     memory->destroy(prot_comp_xi_epsilon);
@@ -143,6 +144,13 @@ PairEM2::~PairEM2()
     memory->destroy(xi_m);
     memory->destroy(xi_b);
     memory->destroy(n_c);
+
+    for (int i = 1; i <= atom->ntypes; i++) {
+      if (mem_comp_poly_exp[i]!=NULL) delete [] mem_comp_poly_exp[i];
+      if (mem_comp_poly_coeff[i]!=NULL) delete [] mem_comp_poly_coeff[i];
+    }
+    if (mem_comp_poly_exp!=NULL) delete [] mem_comp_poly_exp;
+    if (mem_comp_poly_coeff!=NULL) delete [] mem_comp_poly_coeff;
   }
 }
 
@@ -993,16 +1001,27 @@ void PairEM2::compute(int eflag, int vflag)
     }
 
     // Membrain composition potential
-    // phi_m^10/10
+    // phi_m^10/10 or general polynomial potential
     // dphi_m from one-body well potential and total energy are calculated
     // dphi_m from gradient is calculated in the double loop above
     if (spam_flag && mem_comp_pot_flag[itype]) {
-      dpm = mem_comp_epsilon[itype]*pow(iphi_m,9.0);
-
       // phi_m gradient term energy
       eng = mem_comp_xi_epsilon[itype]*MathExtra::dot3(xi_m[i],xi_m[i]);
-      // Well potential
-      eng += mem_comp_epsilon[itype]*0.1*pow(iphi_m,10.0);
+
+      if (mem_comp_npoly[itype]==0) { 
+        // Standard phi_m^10/10 single-well potential
+
+        dpm = mem_comp_epsilon[itype]*pow(iphi_m,9.0);
+        eng += mem_comp_epsilon[itype]*0.1*pow(iphi_m,10.0);
+      } else {
+        // General polynomial potential
+
+        dpm = 0.0;
+        for (j=0;j<mem_comp_npoly[itype];j++) {
+          dpm += mem_comp_poly_exp[itype][j]*mem_comp_poly_coeff[itype][j]*pow(iphi_m, mem_comp_poly_exp[itype][j]-1); 
+          eng += mem_comp_poly_coeff[itype][j]*pow(iphi_m, mem_comp_poly_exp[itype][j]);
+        }
+      }
 
       energy[ET_MEM_COMP] += eng;
       if (eflag) one_eng += eng;
@@ -1206,8 +1225,8 @@ void PairEM2::allocate()
   memory->create(mem_comp_epsilon,n+1,"pair:mem_comp_epsilon");
   memory->create(mem_comp_xi_epsilon,n+1,"pair:mem_comp_xi_epsilon");
   memory->create(mem_comp_npoly,n+1,"pair:mem_comp_npoly");
-  memory->create(mem_comp_poly_exp,n+1,1,"pair:mem_comp_poly_exp");
-  memory->create(mem_comp_poly_coeff,n+1,1,"pair:mem_comp_poly_coeff");
+//  memory->create(mem_comp_poly_exp,n+1,1,"pair:mem_comp_poly_exp");
+//  memory->create(mem_comp_poly_coeff,n+1,1,"pair:mem_comp_poly_coeff");
   memory->create(prot_comp_pot_flag,n+1,"pair:prot_comp_pot_flag");
   memory->create(prot_comp_epsilon,n+1,"pair:prot_comp_epsilon");
   memory->create(prot_comp_xi_epsilon,n+1,"pair:prot_comp_xi_epsilon");
@@ -1235,6 +1254,13 @@ void PairEM2::allocate()
       bend_pot_flag[i][j] = 0;
       olig_pot_flag[i][j] = 0;
     }
+  }
+
+  mem_comp_poly_exp = new double*[n+1];
+  mem_comp_poly_coeff = new double*[n+1];
+  for (int i = 1; i <= n; i++) {
+    mem_comp_poly_exp[i] = NULL;
+    mem_comp_poly_coeff[i] = NULL;
   }
 }
 
@@ -1315,7 +1341,7 @@ void PairEM2::read_parameters()
   int flag1, flag2;
   int npol_val, npol;
   double coeff_one;
-  int *pol_exp=NULL;
+  double *pol_exp=NULL;
   double *pol_coeff=NULL;
 
   FILE *file;
@@ -1529,35 +1555,36 @@ void PairEM2::read_parameters()
       if (me==0) print_log("Membrane Composition Poly potential flag on\n");
       epsilon_val = atof(arg[1]);
       npol_val = atoi(arg[2]);
-      if (narg-3!=npol_val+1) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Membrane Composition Poly Pot)");
-    
+      if (npol_val<=0 || narg-3!=npol_val+1) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Membrane Composition Poly Pot)");
+
       memory->destroy(pol_exp);
       memory->destroy(pol_coeff);
       memory->create(pol_exp,npol_val+1,"pair:pol_exp");
       memory->create(pol_coeff,npol_val+1,"pair:pol_coeff");
-      
+
       npol = 0;
       for (i=0;i<=npol_val;i++) {
         coeff_one = atof(arg[3+i]);
         if (coeff_one!=0.0) {
-          pol_exp[npol] = i;
+          pol_exp[npol] = (double)i;
           pol_coeff[npol] = coeff_one;
           npol++;
         }
       }
-      
+      if (npol<=0) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Membrane Composition Poly Pot)");
+
       force->bounds(arg[0],atom->ntypes,ilo,ihi);
-      
+
       for (i = ilo; i <= ihi; i++) {
         if (mem_comp_pot_flag[i]==1) error->all(FLERR,"Pair_style EM2: Repeated definition of parameters for a type (Membrane Composition Poly Pot)");
         mem_comp_pot_flag[i] = 1;
         mem_comp_xi_epsilon[i] = epsilon_val;
         mem_comp_npoly[i] = npol;
-        memory->destroy(mem_comp_poly_exp[i]);
-        memory->destroy(mem_comp_poly_coeff[i]);
-        memory->create(mem_comp_poly_exp,npol,"pair:mem_comp_poly_exp");
-        memory->create(mem_comp_poly_coeff,npol,"pair:mem_comp_poly_exp");
-        for (j=0;i<npol;i++) {
+        if (mem_comp_poly_exp[i]!=NULL) delete [] mem_comp_poly_exp[i];
+        if (mem_comp_poly_coeff[i]!=NULL) delete [] mem_comp_poly_coeff[i];
+        mem_comp_poly_exp[i] = new double[npol];
+        mem_comp_poly_coeff[i] = new double[npol];
+        for (j=0;j<npol;j++) {
           mem_comp_poly_exp[i][j] = pol_exp[j];
           mem_comp_poly_coeff[i][j] = pol_coeff[j];
         }
@@ -1914,7 +1941,7 @@ void PairEM2::write_restart(FILE *fp)
       fwrite(&mem_comp_xi_epsilon[i],sizeof(double),1,fp);
       if (mem_comp_npoly[i]>0) {
         for (j=0;j<mem_comp_npoly[i];j++) {
-          fwrite(&mem_comp_poly_exp[i][j],sizeof(int),1,fp);
+          fwrite(&mem_comp_poly_exp[i][j],sizeof(double),1,fp);
           fwrite(&mem_comp_poly_coeff[i][j],sizeof(double),1,fp);
         }
       }
@@ -2032,7 +2059,7 @@ void PairEM2::read_restart(FILE *fp)
         fread(&mem_comp_xi_epsilon[i],sizeof(double),1,fp);
         if (mem_comp_npoly[i]>0) {
           for (j=0;j<mem_comp_npoly[i];j++) {
-            fread(&mem_comp_poly_exp[i][j],sizeof(int),1,fp);
+            fread(&mem_comp_poly_exp[i][j],sizeof(double),1,fp);
             fread(&mem_comp_poly_coeff[i][j],sizeof(double),1,fp);
           }
         }
@@ -2041,7 +2068,7 @@ void PairEM2::read_restart(FILE *fp)
       MPI_Bcast(&mem_comp_xi_epsilon[i],1,MPI_DOUBLE,0,world);
       if (mem_comp_npoly[i]>0) {
         for (j=0;j<mem_comp_npoly[i];j++) {
-          MPI_Bcast(&mem_comp_poly_exp[i][j],1,MPI_INT,0,world);
+          MPI_Bcast(&mem_comp_poly_exp[i][j],1,MPI_DOUBLE,0,world);
           MPI_Bcast(&mem_comp_poly_coeff[i][j],1,MPI_DOUBLE,0,world);
         }
       }

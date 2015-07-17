@@ -90,8 +90,8 @@ class PairEM2 : public Pair {
   // Membrain Composition potential parameters
   int *mem_comp_pot_flag;
   double *mem_comp_xi_epsilon, *mem_comp_epsilon;
-  int *mem_comp_npoly, **mem_comp_poly_exp;
-  double **mem_comp_poly_coeff;
+  int *mem_comp_npoly;
+  double **mem_comp_poly_coeff, **mem_comp_poly_exp;
 
   // Protein Composition potential parameters
   int *prot_comp_pot_flag;
