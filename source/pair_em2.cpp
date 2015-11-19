@@ -105,6 +105,9 @@ PairEM2::~PairEM2()
     memory->destroy(lucy_sigma);
     memory->destroy(lucy_sigma_inv);
     memory->destroy(lucy_sigmasq_inv);
+    memory->destroy(lucy_table_pot_flag);
+    memory->destroy(lucy_table_epsilon);
+    memory->destroy(lucy_table_sigma);
     memory->destroy(ex12_pot_flag);
     memory->destroy(ex12_epsilon);
     memory->destroy(ex12_sigma);
@@ -118,6 +121,8 @@ PairEM2::~PairEM2()
     memory->destroy(bend_epsilon);
     memory->destroy(bend_k0);
     memory->destroy(bend_gamma_epsilon);
+    memory->destroy(lipid_factor_flag);
+    memory->destroy(lipid_lambda);
     memory->destroy(olig_pot_flag);
     memory->destroy(olig_epsilon);
     memory->destroy(aolig);
@@ -145,12 +150,31 @@ PairEM2::~PairEM2()
     memory->destroy(xi_b);
     memory->destroy(n_c);
 
-    for (int i = 1; i <= atom->ntypes; i++) {
+    int i, j;
+
+    for (i = 1; i <= atom->ntypes; i++) {
       if (mem_comp_poly_exp[i]!=NULL) delete [] mem_comp_poly_exp[i];
       if (mem_comp_poly_coeff[i]!=NULL) delete [] mem_comp_poly_coeff[i];
     }
     if (mem_comp_poly_exp!=NULL) delete [] mem_comp_poly_exp;
     if (mem_comp_poly_coeff!=NULL) delete [] mem_comp_poly_coeff;
+
+    for (int i = 1; i <= atom->ntypes; i++) {
+      for (int j = i; j <= atom->ntypes; j++) {
+        if (lucy_etable1[i][j]) free(lucy_etable1[i][j]);
+        if (lucy_etable2[i][j]) free(lucy_etable2[i][j]);
+        if (lucy_ftable1[i][j]) free(lucy_ftable1[i][j]);
+        if (lucy_ftable2[i][j]) free(lucy_ftable2[i][j]);
+      }
+      free(lucy_etable1[i]);
+      free(lucy_etable2[i]);
+      free(lucy_ftable1[i]);
+      free(lucy_ftable2[i]);
+    }
+    free(lucy_etable1);
+    free(lucy_etable2);
+    free(lucy_ftable1);
+    free(lucy_ftable2);
   }
 }
 
@@ -169,8 +193,8 @@ void PairEM2::compute(int eflag, int vflag)
   double ai[3][3],aj[3][3],normi[3],normj[3],nti[3],ntj[3];
 
   // SPAM
-  double spam_factor;
-  bool b_spam_force, b_spam_force2;
+  double spam_factor, lipid_factor;
+  bool b_spam_force, b_spam_force2, m_spam_force;
   double iphi_m,jphi_m,iphi_b,jphi_b;
   double dpm,dpb,idphi[2],jdphi[2];
   double rho_one,rho_ave_inv,xi_one,dw;
@@ -182,6 +206,10 @@ void PairEM2::compute(int eflag, int vflag)
 
   // Lucy potential
   double epsq2;
+
+  // Lucy table potential
+  int ir;
+  double *etb1, *etb2, *ftb1, *ftb2;
 
   // Bending potential
   double uij, gamma,gamma_r, gamma_epsilon, thetai, thetaj, alphai, alphaj, alpha_sq;
@@ -574,6 +602,29 @@ void PairEM2::compute(int eflag, int vflag)
           fforce[2] += r12[2]*fpair; 
         }
 
+        // Table version of Lucy potential
+        // Repulsive term for solvent-solvent and membrane-solvet interaction
+        // This term has form of Lucy kernel function
+        // Only forces and energy are calculated
+        if (lucy_table_pot_flag[itype][jtype] && r<lucy_table_sigma[itype][jtype]) {
+          etb1 = lucy_etable1[itype][jtype];
+          etb2 = lucy_etable2[itype][jtype];
+          ftb1 = lucy_ftable1[itype][jtype];
+          ftb2 = lucy_ftable2[itype][jtype];
+          ir = int(r*lucy_tb_dr_inv);
+
+          // Energy and force values are obtained from trangle interpolation
+          
+          eng = etb1[ir]*r + etb2[ir];
+          fpair = ftb1[ir]*r + ftb2[ir];
+
+          energy[ET_LUCY] += eng;
+          if (eflag) one_eng += eng;
+          fforce[0] += r12[0]*fpair;
+          fforce[1] += r12[1]*fpair;
+          fforce[2] += r12[2]*fpair; 
+        }
+
         // Repulsive 1/r^12 term
         // Only forces and energy are calculated
         if (ex12_pot_flag[itype][jtype]) {
@@ -619,6 +670,19 @@ void PairEM2::compute(int eflag, int vflag)
           // 4.0*epsilon*(1 - k0*( MAX(iphi_b,1.0) + MAX(jphi_b,1.0) ))*(sigma/r)^2
           epsilon_sigmasq_r2inv = bend_epsilon[itype][jtype]*r2inv;
           if (spam_flag) epsilon_sigmasq_r2inv *= (1 - bend_k0[itype][jtype]*spam_factor);
+
+          // Multiply by lipid rigidity bending factor
+          // 0.5*(1 + lambda) + 0.5*(lampda - 1) * 0.5*(phi_m_i + phi_m_j)
+          if (spam_flag && lipid_factor_flag[itype][jtype]) {
+            lipid_factor = 0.5*(MIN(MAX(iphi_m,-1.0),1.0) + MIN(MAX(jphi_m,-1.0),1.0));
+            lipid_factor = 0.5*(1.0 + lipid_lambda[itype][jtype] + lipid_factor * (lipid_lambda[itype][jtype] - 1.0));
+            m_spam_force = (iphi_m<=1.0 && iphi_m>=-1.0) || (newton_pair && jphi_m<=1.0 && jphi_m>=-1.0);
+
+            epsilon_sigmasq_r2inv *= lipid_factor;
+          } else {
+            lipid_factor = 1.0;
+            m_spam_force = false;
+          }
 
           ru12[0] = r12[0]*rinv;
           ru12[1] = r12[1]*rinv;
@@ -713,12 +777,21 @@ void PairEM2::compute(int eflag, int vflag)
           if (spam_flag && b_spam_force) {
 
             // Contribution from the derivative of prefactor
-            dpb = 0.5*bend_epsilon[itype][jtype]*bend_k0[itype][jtype]*r2inv*uij;
+            dpb = 0.5*bend_epsilon[itype][jtype]*bend_k0[itype][jtype]*lipid_factor*r2inv*uij;
             // Contribution from the derivative of gamma
             dpb -= 0.25*epsilon_sigmasq_r2inv*bend_gamma_epsilon[itype][jtype]*(thetai_gamma_r - thetaj_gamma_r)*alpha_sq*r;
             
             if (iphi_b<=0.0 && iphi_b>=-1.0) idphi[1] += dpb;
             if (jphi_b<=0.0 && jphi_b>=-1.0) jdphi[1] += dpb;
+          }
+
+          // Calculate -dphi/dt for phi_m only
+          // Contribution from the derivative of prefactor
+          if (spam_flag && m_spam_force) {
+            dpm = -0.25*(lipid_lambda[itype][jtype] - 1.0)*bend_epsilon[itype][jtype]*(1 - bend_k0[itype][jtype]*spam_factor)*r2inv*uij;
+
+            if (iphi_m<=1.0 && iphi_m>=-1.0) idphi[0] += dpb;
+            if (jphi_m<=1.0 && jphi_m>=-1.0) jdphi[0] += dpb;
           }
         }
 
@@ -1198,6 +1271,9 @@ void PairEM2::allocate()
   memory->create(lucy_sigma,n+1,n+1,"pair:lucy_sigma");
   memory->create(lucy_sigma_inv,n+1,n+1,"pair:lucy_sigma_inv");
   memory->create(lucy_sigmasq_inv,n+1,n+1,"pair:lucy_sigmasq_inv");
+  memory->create(lucy_table_pot_flag,n+1,n+1,"pair:lucy_table_pot_flag");
+  memory->create(lucy_table_epsilon,n+1,n+1,"pair:lucy_table_epsilon");
+  memory->create(lucy_table_sigma,n+1,n+1,"pair:lucy_table_sigma");
   memory->create(ex12_pot_flag,n+1,n+1,"pair:ex12_pot_flag");
   memory->create(ex12_epsilon,n+1,n+1,"pair:ex12_epsilon");
   memory->create(ex12_sigma,n+1,n+1,"pair:ex12_sigma");
@@ -1211,6 +1287,8 @@ void PairEM2::allocate()
   memory->create(bend_epsilon,n+1,n+1,"pair:bend_epsilon");
   memory->create(bend_k0,n+1,n+1,"pair:bend_k0");
   memory->create(bend_gamma_epsilon,n+1,n+1,"pair:");
+  memory->create(lipid_factor_flag,n+1,n+1,"pair:lipid_factor_flag");
+  memory->create(lipid_lambda,n+1,n+1,"pair:lipid_lambda");
   memory->create(olig_pot_flag,n+1,n+1,"pair:olig_pot_flag");
   memory->create(olig_epsilon,n+1,n+1,"pair:olig_epsilon");
   memory->create(aolig,n+1,n+1,"pair:aolig");
@@ -1249,9 +1327,11 @@ void PairEM2::allocate()
       lj216_pot_flag[i][j] = 0;
       lj612_pot_flag[i][j] = 0;
       lucy_pot_flag[i][j] = 0;
+      lucy_table_pot_flag[i][j] = 0;
       ex12_pot_flag[i][j] = 0;
       gauss_pot_flag[i][j] = 0;
       bend_pot_flag[i][j] = 0;
+      lipid_factor_flag[i][j] = 0;
       olig_pot_flag[i][j] = 0;
     }
   }
@@ -1261,6 +1341,23 @@ void PairEM2::allocate()
   for (int i = 1; i <= n; i++) {
     mem_comp_poly_exp[i] = NULL;
     mem_comp_poly_coeff[i] = NULL;
+  }
+
+  lucy_etable1 = (double ***)malloc((n+1)*sizeof(double**));
+  lucy_etable2 = (double ***)malloc((n+1)*sizeof(double**));
+  lucy_ftable1 = (double ***)malloc((n+1)*sizeof(double**));
+  lucy_ftable2 = (double ***)malloc((n+1)*sizeof(double**));
+  for (int i = 0; i <= n; i++) {
+    lucy_etable1[i] = (double **) malloc((n+1)*sizeof(double *));
+    lucy_etable2[i] = (double **) malloc((n+1)*sizeof(double *));
+    lucy_ftable1[i] = (double **) malloc((n+1)*sizeof(double *));
+    lucy_ftable2[i] = (double **) malloc((n+1)*sizeof(double *));
+    for (int j = 1; j <= n; j++) {
+      lucy_etable1[i][j] = NULL;
+      lucy_etable2[i][j] = NULL;
+      lucy_ftable1[i][j] = NULL;
+      lucy_ftable2[i][j] = NULL;
+    }
   }
 }
 
@@ -1325,6 +1422,7 @@ void PairEM2::coeff(int narg, char **arg)
   if (count == 0) error->all(FLERR,"Incorrect args for pair coefficients");
 
   if (read_par_flag) read_parameters();
+  compute_lucy_potential_table();
 }
 
 /* ----------------------------------------------------------------------*/
@@ -1347,7 +1445,7 @@ void PairEM2::read_parameters()
   FILE *file;
   int file_state, narg=0, iarg_line=-1;
   char ln[1024], *line, *arg[16];
-  enum File_States{FS_NONE=0, FS_LJ216, FS_LJ612, FS_LUCY, FS_EX12, FS_GAUSS, FS_BEND, FS_OLIG, FS_COUP_IC, FS_COUP_CC, FS_MEM_COMP, FS_MEM_COMP_POLY, FS_BAR_COMP, FS_COMP_CUT, FS_COMP_STAT, FS_FLOW, FS_SPAM, FS_PCOV};
+  enum File_States{FS_NONE=0, FS_LJ216, FS_LJ612, FS_LUCY, FS_LUCY_TB, FS_EX12, FS_GAUSS, FS_BEND, FS_OLIG, FS_COUP_IC, FS_COUP_CC, FS_MEM_COMP, FS_MEM_COMP_POLY, FS_BAR_COMP, FS_COMP_CUT, FS_COMP_STAT, FS_FLOW, FS_SPAM, FS_PCOV, FS_LIP_FACTOR};
 
   int me = comm->me;
 
@@ -1432,6 +1530,30 @@ void PairEM2::read_parameters()
         }
       }
       break;
+    case FS_LUCY_TB:
+      if (iarg_line==0) {
+        if (narg!=1) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Lucy Table Header)");
+        if (me==0) print_log("Reading Lucy Table Header\n");
+        lucy_tb_dr = atof(arg[0]);
+        lucy_tb_dr_inv = 1.0/lucy_tb_dr;
+      } else {
+        if (narg!=4) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Lucy Table)");
+        if (me==0) print_log("Lucy Table excluded volume potential flag on\n");
+        epsilon_val = atof(arg[2]);
+        sigma_val = atof(arg[3]);
+
+        force->bounds(arg[0],atom->ntypes,ilo,ihi);
+        force->bounds(arg[1],atom->ntypes,jlo,jhi);
+
+        for (i = ilo; i <= ihi; i++) {
+          for (j = MAX(jlo,i); j <= jhi; j++) {
+            lucy_table_pot_flag[i][j] = 1;
+            lucy_table_epsilon[i][j] = epsilon_val;
+            lucy_table_sigma[i][j] = sigma_val;
+          }
+        }
+      }
+      break;
     case FS_EX12:
       if (narg!=4) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Excluded_12)");
       if (me==0) print_log("Excluded_12 potential flag on\n");
@@ -1485,6 +1607,21 @@ void PairEM2::read_parameters()
           bend_epsilon[i][j] = 4.0*epsilon_val*sigma_val*sigma_val; // 4*epsilon*sigma^2
           bend_k0[i][j] = k0_val;
           bend_gamma_epsilon[i][j] = geps_val;
+        }
+      }
+      break;
+    case FS_LIP_FACTOR:
+      if (narg!=3) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Lipid Bending Rigidity Factor)");
+      if (me==0) print_log("Lipid Bending Rigidity Factor flag on\n");
+      epsilon_val = atof(arg[2]);
+
+      force->bounds(arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(arg[1],atom->ntypes,jlo,jhi);
+
+      for (i = ilo; i <= ihi; i++) {
+        for (j = MAX(jlo,i); j <= jhi; j++) {
+          lipid_factor_flag[i][j] = 1;
+          lipid_lambda[i][j] = epsilon_val;
         }
       }
       break;
@@ -1686,12 +1823,16 @@ void PairEM2::read_parameters()
         file_state = FS_LJ612;
       else if (strcmp(line, "[Lucy_Excluded_Volume]")==0)
         file_state = FS_LUCY;
+      else if (strcmp(line, "[Lucy_Excluded_Volume_Table]")==0)
+        file_state = FS_LUCY_TB;
       else if (strcmp(line, "[Excluded_12]")==0)
         file_state = FS_EX12;
       else if (strcmp(line, "[Gaussian]")==0)
         file_state = FS_GAUSS;
       else if (strcmp(line, "[EM2_Bending]")==0)
         file_state = FS_BEND;
+      else if (strcmp(line, "[Lipid_Bending_Rigidity_Factor]")==0)
+        file_state = FS_LIP_FACTOR;
       else if (strcmp(line, "[Oligomerization_Energy]")==0)
         file_state = FS_OLIG;
       else if (strcmp(line, "[Intrinsic_Curvature_Coupling]")==0)
@@ -1768,6 +1909,72 @@ bool PairEM2::isEmptyString(char *str)
 }
 
 /* ----------------------------------------------------------------------
+ * Compute table for Lucy Potential
+ * ---------------------------------------------------------------------- */
+void PairEM2::compute_lucy_potential_table()
+{
+  int i, j, k, nbins;
+  double r1, r2, v1, v2, f1, f2, sigma0, sigma, epsq2, epsilon;
+  int n = atom->ntypes;
+
+  for (i=1;i<=n;i++) {
+    for (j=1;j<=n;j++) {
+      if (lucy_etable1[i][j]) free(lucy_etable1[i][j]);
+      if (lucy_etable2[i][j]) free(lucy_etable2[i][j]);
+      if (lucy_ftable1[i][j]) free(lucy_ftable1[i][j]);
+      if (lucy_ftable2[i][j]) free(lucy_ftable2[i][j]);
+
+      lucy_etable1[i][j] = NULL;
+      lucy_etable2[i][j] = NULL;
+      lucy_ftable1[i][j] = NULL;
+      lucy_ftable2[i][j] = NULL;
+    }
+  }
+
+  for (i=1;i<=n;i++) {
+    for (j=i;j<=n;j++) {
+      if (lucy_table_pot_flag[i][j]) {
+        epsilon = lucy_table_epsilon[i][j];
+        sigma0 = lucy_table_sigma[i][j];
+
+        nbins = (int)(sigma0*lucy_tb_dr_inv)+1;
+        lucy_etable1[i][j] = (double *)malloc(nbins*sizeof(double));
+        lucy_etable2[i][j] = (double *)malloc(nbins*sizeof(double));
+        lucy_ftable1[i][j] = (double *)malloc(nbins*sizeof(double));
+        lucy_ftable2[i][j] = (double *)malloc(nbins*sizeof(double));
+        
+        for (k=0;k<nbins;k++) {
+          r1 = (double)k*lucy_tb_dr;
+          r2 = (double)(k+1)*lucy_tb_dr;
+
+          sigma = r1/sigma0;
+          epsq2 = epsilon*(1-sigma)*(1-sigma);
+          v1 = epsq2*(1-sigma)*(1+3*sigma);
+          f1 = 12*epsq2/(sigma0*sigma0);
+
+          sigma = r2/sigma0;
+          epsq2 = epsilon*(1-sigma)*(1-sigma);
+          v2 = epsq2*(1-sigma)*(1+3*sigma);
+          f2 = 12*epsq2/(sigma0*sigma0);
+
+          lucy_etable1[i][j][k] = (v2-v1)/(r2-r1);
+          lucy_etable2[i][j][k] = (v1*r2 - v2*r1)/(r2-r1);
+          lucy_ftable1[i][j][k] = (f2-f1)/(r2-r1);
+          lucy_ftable2[i][j][k] = (f1*r2 - f2*r1)/(r2-r1);
+        }
+
+        if (i!=j) {
+          lucy_etable1[j][i] = lucy_etable1[i][j];
+          lucy_etable2[j][i] = lucy_etable2[i][j];
+          lucy_ftable1[j][i] = lucy_ftable1[i][j];
+          lucy_ftable2[j][i] = lucy_ftable2[i][j];
+        }
+      }
+    }
+  }
+}
+
+/* ----------------------------------------------------------------------
    init specific to this pair style
 ------------------------------------------------------------------------- */
 
@@ -1799,6 +2006,8 @@ void PairEM2::init_style()
       break;
     }
   }
+
+  lucy_tb_dr_inv = 1.0/lucy_tb_dr;
 
   if (flag && !comp_flag) error->all(FLERR,"Pair em2 requires composition cutoff if any corresponding potentials are on");
   if (!flag) comp_flag = 0;
@@ -1867,6 +2076,14 @@ double PairEM2::init_one(int i, int j)
     lucy_sigmasq_inv[j][i] = lucy_sigmasq_inv[i][j];
   }
 
+  if (lucy_table_pot_flag[i][j]) {
+    if (lucy_table_sigma[i][j]>cut[i][j]) error->all(FLERR,"Lucy Table Excluded Volume cutoff cannot be larger than overal cutoff for a pair type");
+
+    lucy_table_pot_flag[j][i] = lucy_table_pot_flag[i][j];
+    lucy_table_epsilon[j][i] = lucy_table_epsilon[i][j];
+    lucy_table_sigma[j][i] = lucy_table_sigma[i][j];
+  }
+
   if (ex12_pot_flag[i][j]) {
     ex12_epsig[i][j] = ex12_epsilon[i][j]*pow(ex12_sigma[i][j],12);
 
@@ -1891,6 +2108,11 @@ double PairEM2::init_one(int i, int j)
     bend_epsilon[j][i] = bend_epsilon[i][j];
     bend_k0[j][i] = bend_k0[i][j];
     bend_gamma_epsilon[j][i] = bend_gamma_epsilon[i][j];
+  }
+
+  if (lipid_factor_flag[i][j]) {
+    lipid_factor_flag[j][i] = lipid_factor_flag[i][j];
+    lipid_lambda[j][i] = lipid_lambda[i][j];
   }
 
   if (olig_pot_flag[i][j]) {
@@ -1959,9 +2181,11 @@ void PairEM2::write_restart(FILE *fp)
       fwrite(&lj216_pot_flag[i][j],sizeof(int),1,fp);
       fwrite(&lj612_pot_flag[i][j],sizeof(int),1,fp);
       fwrite(&lucy_pot_flag[i][j],sizeof(int),1,fp);
+      fwrite(&lucy_table_pot_flag[i][j],sizeof(int),1,fp);
       fwrite(&ex12_pot_flag[i][j],sizeof(int),1,fp);
       fwrite(&gauss_pot_flag[i][j],sizeof(int),1,fp);
       fwrite(&bend_pot_flag[i][j],sizeof(int),1,fp);
+      fwrite(&lipid_factor_flag[i][j],sizeof(int),1,fp);
       fwrite(&olig_pot_flag[i][j],sizeof(int),1,fp);
       fwrite(&cut[i][j],sizeof(double),1,fp);
       if (lj216_pot_flag[i][j]) {
@@ -1978,6 +2202,10 @@ void PairEM2::write_restart(FILE *fp)
         fwrite(&lucy_epsilon[i][j],sizeof(double),1,fp);
         fwrite(&lucy_sigma[i][j],sizeof(double),1,fp);
       }
+      if (lucy_table_pot_flag[i][j]) {
+        fwrite(&lucy_table_epsilon[i][j],sizeof(double),1,fp);
+        fwrite(&lucy_table_sigma[i][j],sizeof(double),1,fp);
+      }
       if (ex12_pot_flag[i][j]) {
         fwrite(&ex12_epsilon[i][j],sizeof(double),1,fp);
         fwrite(&ex12_sigma[i][j],sizeof(double),1,fp);
@@ -1991,6 +2219,9 @@ void PairEM2::write_restart(FILE *fp)
         fwrite(&bend_epsilon[i][j],sizeof(double),1,fp);
         fwrite(&bend_k0[i][j],sizeof(double),1,fp);
         fwrite(&bend_gamma_epsilon[i][j],sizeof(double),1,fp);
+      }
+      if (lipid_factor_flag[i][j]) { 
+        fwrite(&lipid_lambda[i][j],sizeof(double),1,fp);
       }
       if (olig_pot_flag[i][j]) {
         fwrite(&olig_epsilon[i][j],sizeof(double),1,fp);
@@ -2094,17 +2325,21 @@ void PairEM2::read_restart(FILE *fp)
         fread(&lj216_pot_flag[i][j],sizeof(int),1,fp);
         fread(&lj612_pot_flag[i][j],sizeof(int),1,fp);
         fread(&lucy_pot_flag[i][j],sizeof(int),1,fp);
+        fread(&lucy_table_pot_flag[i][j],sizeof(int),1,fp);
         fread(&ex12_pot_flag[i][j],sizeof(int),1,fp);
         fread(&gauss_pot_flag[i][j],sizeof(int),1,fp);
         fread(&bend_pot_flag[i][j],sizeof(int),1,fp);
+        fread(&lipid_factor_flag[i][j],sizeof(int),1,fp);
         fread(&olig_pot_flag[i][j],sizeof(int),1,fp);
       }
       MPI_Bcast(&lj216_pot_flag[i][j],1,MPI_INT,0,world);
       MPI_Bcast(&lj612_pot_flag[i][j],1,MPI_INT,0,world);
       MPI_Bcast(&lucy_pot_flag[i][j],1,MPI_INT,0,world);
+      MPI_Bcast(&lucy_table_pot_flag[i][j],1,MPI_INT,0,world);
       MPI_Bcast(&ex12_pot_flag[i][j],1,MPI_INT,0,world);
       MPI_Bcast(&gauss_pot_flag[i][j],1,MPI_INT,0,world);
       MPI_Bcast(&bend_pot_flag[i][j],1,MPI_INT,0,world);
+      MPI_Bcast(&lipid_factor_flag[i][j],1,MPI_INT,0,world);
       MPI_Bcast(&olig_pot_flag[i][j],1,MPI_INT,0,world);
 
       if (me == 0) fread(&cut[i][j],sizeof(double),1,fp);
@@ -2141,6 +2376,15 @@ void PairEM2::read_restart(FILE *fp)
         MPI_Bcast(&lucy_sigma[i][j],1,MPI_DOUBLE,0,world);
       }
 
+      if (lucy_table_pot_flag[i][j]) {
+        if (me == 0) {
+          fread(&lucy_table_epsilon[i][j],sizeof(double),1,fp);
+          fread(&lucy_table_sigma[i][j],sizeof(double),1,fp);
+        }
+        MPI_Bcast(&lucy_table_epsilon[i][j],1,MPI_DOUBLE,0,world);
+        MPI_Bcast(&lucy_table_sigma[i][j],1,MPI_DOUBLE,0,world);
+      }
+
       if (ex12_pot_flag[i][j]) {
         if (me == 0) {
           fread(&ex12_epsilon[i][j],sizeof(double),1,fp);
@@ -2170,6 +2414,13 @@ void PairEM2::read_restart(FILE *fp)
         MPI_Bcast(&bend_epsilon[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&bend_k0[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&bend_gamma_epsilon[i][j],1,MPI_DOUBLE,0,world);
+      }
+
+      if (lipid_factor_flag[i][j]) {
+        if (me == 0) {
+          fread(&lipid_lambda[i][j],sizeof(double),1,fp);
+        }
+        MPI_Bcast(&lipid_lambda[i][j],1,MPI_DOUBLE,0,world);
       }
 
       if (olig_pot_flag[i][j]) {
@@ -2203,6 +2454,7 @@ void PairEM2::write_restart_settings(FILE *fp)
   fwrite(&pcov_epsilon,sizeof(double),1,fp);
   fwrite(&pcov_eta0,sizeof(double),1,fp);
   fwrite(&spam_gamma,sizeof(double),1,fp);
+  fwrite(&lucy_tb_dr,sizeof(double),1,fp);
 
   if (comp_flag) {
     fwrite(&comp_rcut,sizeof(double),1,fp);
@@ -2230,6 +2482,7 @@ void PairEM2::read_restart_settings(FILE *fp)
     fread(&pcov_epsilon,sizeof(double),1,fp);
     fread(&pcov_eta0,sizeof(double),1,fp);
     fread(&spam_gamma,sizeof(double),1,fp);
+    fread(&lucy_tb_dr,sizeof(double),1,fp);
   }
   MPI_Bcast(&cut_global,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&offset_flag,1,MPI_INT,0,world);
@@ -2244,6 +2497,7 @@ void PairEM2::read_restart_settings(FILE *fp)
   MPI_Bcast(&pcov_epsilon,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&pcov_eta0,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&spam_gamma,1,MPI_DOUBLE,0,world);
+  MPI_Bcast(&lucy_tb_dr,1,MPI_DOUBLE,0,world);
 
   if (comp_flag) {
     if (me == 0) {

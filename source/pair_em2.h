@@ -63,6 +63,12 @@ class PairEM2 : public Pair {
   int **lucy_pot_flag;
   double **lucy_epsilon, **lucy_sigma, **lucy_sigma_inv, **lucy_sigmasq_inv;
 
+  // Lucy table potential parameters
+  int **lucy_table_pot_flag;
+  double **lucy_table_epsilon, **lucy_table_sigma;
+  double lucy_tb_dr, lucy_tb_dr_inv;
+  double ***lucy_etable1, ***lucy_etable2, ***lucy_ftable1, ***lucy_ftable2;
+
   // Excluded volume 1/r^12 potential parameters
   int **ex12_pot_flag;
   double **ex12_epsilon, **ex12_sigma, **ex12_epsig;
@@ -74,6 +80,10 @@ class PairEM2 : public Pair {
   // Bending potential parameters
   int **bend_pot_flag;
   double **bend_epsilon, **bend_sigmasq, **bend_k0, **bend_gamma_epsilon;
+
+  // Lipid bending rigidity factor parameters
+  int **lipid_factor_flag;
+  double **lipid_lambda;
 
   // Oligomerization potential parameters
   int **olig_pot_flag, **aolig;
@@ -133,6 +143,7 @@ class PairEM2 : public Pair {
 
   void allocate();
   void read_parameters();
+  void compute_lucy_potential_table();
   char *ltrim(char *s);
   char *rtrim(char *s);
   char *trim(char *s);
