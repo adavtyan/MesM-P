@@ -19,6 +19,12 @@
 #1 1 2.50956 0.5 68.0 0.009
 #1 1 10.5 0.5 68.0 0.09
 
+# Lipid type depending rigidity factor for Bending potential
+# Factor is 1 for phi_m = -1 and lambda for phi_m = 1
+# I J lambda
+[Lipid_Bending_Rigidity_Factor]
+1 1 3.0
+
 # I J epsilon aolig
 [Oligomerization_Energy]
 1 1 0.5 1
