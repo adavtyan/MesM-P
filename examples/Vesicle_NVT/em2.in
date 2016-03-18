@@ -1,0 +1,77 @@
+units real
+
+boundary p p p
+
+timestep 1
+
+neighbor    2.0 bin
+neigh_modify    delay 5
+
+atom_style      em2
+pair_style      em2 136.0
+
+#atom_modify     sort 0 0
+
+read_data       data.em2
+
+pair_coeff      * * em2_par_file.dat 136.0
+
+group           mem type 1
+group           sol type 2
+
+variable        st equal step
+variable        epot equal pe
+variable        ekin equal ke
+variable        etot equal etotal
+
+variable        rand equal floor(random(1,99999999,1))
+velocity        all create 308.0 ${rand} dist gaussian
+
+compute         em2_eng all em2_energy
+compute         nc mem em2_nc/atom
+compute         phi all em2_phi/atom
+#compute         dphi all em2_dphi/atom
+#compute         rho all em2_rho/atom
+#compute         xi all em2_xi/atom
+compute         tu mem em2_tu 136.0
+compute         conc all tot_conc
+compute         conc_mem mem tot_conc
+
+variable        e2tot equal c_em2_eng[1]
+variable        elj216 equal c_em2_eng[2]
+variable        elucy equal c_em2_eng[3]
+variable        ebend equal c_em2_eng[4]
+variable        eolig equal c_em2_eng[5]
+variable        eic equal c_em2_eng[6]
+variable        ecc equal c_em2_eng[7]
+variable        emc equal c_em2_eng[8]
+variable        epc equal c_em2_eng[9]
+variable        stu equal c_tu
+variable        conm equal c_conc[1]
+variable        conb equal c_conc[2]
+variable        mconm equal c_conc_mem[1]
+variable        mconb equal c_conc_mem[2]
+
+fix              1 mem nvt temp 308 308 100
+fix              2 sol nvt temp 308 308 100
+fix              3 mem nvt/em2/rot temp 308 308 100 integration_conf.dat
+fix              4 all em2/spam integration_conf.dat
+
+fix             5 all print/wzero 100 "${st} ${epot} ${ekin} ${etot}" screen no file energy.dat title "Step Potential_Energy Kinetic_Energy Total_Energy"
+fix             6 all print/wzero 100 "${st} ${elj216} ${elucy} ${ebend} ${eolig} ${eic} ${ecc} ${emc} ${epc} ${e2tot}" screen no file energy_em2.dat title "Step LJ216 Lucy Bend Olig IC CC MEM_COMP PROT_COMP EM2_Total"
+
+#fix             11 all print/wzero 1 "${st} ${stu}" screen no file tu.dat title "STEP Tu"
+fix             12 all print/wzero 1 "${st} ${conm} ${conb}" screen no file conc.dat title "STEP C_m C_b"
+fix             13 all print/wzero 1 "${st} ${mconm} ${mconb}" screen no file mem_conc.dat title "STEP C_m C_b"
+
+dump            1 mem custom 1000 dump.lammpstrj id type xu yu zu c_phi[1] c_phi[2] c_nc
+#dump            1 all custom 1000 dump.force id type x y z fx fy fz tqx tqy tqz c_dphi[1] c_dphi[2] c_phi[1] c_phi[2] c_nc
+#dump            1 all custom 1000 dump.force id type xs ys zs fx fy fz tqx tqy tqz c_dphi[1] c_dphi[2] c_rho[1] c_rho[2]
+
+dump_modify     1 sort id
+
+thermo          1000
+
+#restart         1000000 restart
+
+run             500000

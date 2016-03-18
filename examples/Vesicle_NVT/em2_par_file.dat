@@ -1,0 +1,66 @@
+# EM2 model parameters in real LAMMPS units (e.g. kcal/mol for energy and A for distance)
+# Per-type moment of ineria is defined in integration_conf.dat
+
+# I J epsilon k0 sigma
+[Lennard-Jones_2-16]
+1 1 1.553537 1.0 68.0
+
+# I J epsilon sigma
+[Lucy_Excluded_Volume]
+1 2 1.195 90.0
+2 2 0.239 90.0 
+
+# I J epsilon k0 sigma epsilon_gamma
+[EM2_Bending]
+1 1 2.39 1.0 68.0 0.012
+
+# I J epsilon aolig
+[Oligomerization_Energy]-
+1 1 0.5 1
+
+# Global cutoff for mass weight function (Lucy function)
+# used in Composition potentials. Only one line allowed.
+# This is needed if either Membrane_Composition or Protein_Composition are on
+[Composition_Cutoff]
+90.0
+
+# I epsilon_xi(gradient) epsilon(well potential)
+[Membrane_Composition]
+1 0.239 0.000239
+
+# I epsilon_xi(gradient) epsilon(well potential)
+[Protein_Composition]
+1 0.239 0.000239
+2 0.239 0.000239
+
+# I epsilon eta0(desired coverage, 0-1)
+[Protein_Coverage]-
+1000.0 0.40
+1 1
+
+# I Lambda_M Lambda_K epsilon_gamma
+[Intrinsic_Curvature_Coupling]
+1 0.06 119.5 0.012
+
+# I epsilon(?) zeta_0
+[Composition_Coupling]-
+1 9.56022944 2.0
+
+# First line: mem_stat_epsilon prot_stat_epsilon
+# Next lines: I mem_stat_flag prot_stat_flag
+[Composition_Stat]
+1.19502868 1.19502868
+1 1 1
+2 0 1
+
+# Flow term. Takes only one parameter
+# Membrane or Protein Composition potential must be on for this to work
+# 1 on, 0 off
+[Flow_Term_Flag]
+1
+
+# Turns on or off all SPAM calculations
+# and set spam_gamma: dphi/dt = - gamma * dF/dphi
+# flag(1 on, 0 off) spam_gamma
+[SPAM_Flag]
+1 0.01

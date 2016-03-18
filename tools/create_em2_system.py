@@ -9,10 +9,10 @@ n_prot = 89134
 n_tot = n_mem + n_prot
 
 # Is this a vesicular system or not
-ves = True
+ves = False
 
 # Generate coordinates and quats or read from old config
-gen = False
+gen = True
 two_ty_sol = True
 conf_file = "config.em2"
 Lx = Ly = Lz = 3600.0 # default box dimentions
@@ -101,7 +101,7 @@ else:
 
   xyz = lconv*data[1:n_tot+1,:3]
   quat = data[n_tot+1:]
-  types = data[1:n_tot+1,3]
+  types.append(ty)
 
 print "Box dimentions" 
 print Lx, Ly, Lz
@@ -135,7 +135,6 @@ if ves:
     if i>=n_mem and np.linalg.norm(xyz[i] - com)>R:
       phi_b.append(rn.uniform(-1.0, 1.0))
     else:
-      if not gen and two_ty_sol and i>=n_mem: types[i] = 3
       phi_b.append(1.0)
 else:
   for i in range(n_tot):
@@ -148,7 +147,6 @@ else:
     if i>=n_mem and xyz[i][2]>z0:
       phi_b.append(rn.uniform(-1.0, 1.0))
     else:
-      if not gen and two_ty_sol and i>=n_mem: types[i] = 3
       phi_b.append(1.0)
 
 # Set phi averages to zero
