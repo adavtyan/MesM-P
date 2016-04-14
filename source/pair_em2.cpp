@@ -882,7 +882,7 @@ void PairEM2::compute(int eflag, int vflag)
           gb_force[1] *= 2.0*epsilon*r2inv;
           gb_force[2] *= 2.0*epsilon*r2inv;
 
-          eng = -epsilon*rinv*uij;
+          eng = -epsilon*r2inv*uij;
 
           energy[ET_IC] += eng;
           if (eflag) one_eng += eng;
