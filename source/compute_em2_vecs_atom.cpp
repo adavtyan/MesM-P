@@ -55,10 +55,8 @@ ComputeEM2VecsAtom::ComputeEM2VecsAtom(LAMMPS *lmp, int narg, char **arg) :
   if (narg==4) {
     scale_normal = scale_inplane = force->numeric(FLERR,arg[3]);
   } else if (narg==5) {
-    scale_normal = scale_inplane = force->numeric(FLERR,arg[3]);
-    scale_inplane = scale_inplane = force->numeric(FLERR,arg[4]);
-  } else {
-    error->all(FLERR,"Illegal compute em2_vecs/atom command");
+    scale_normal = force->numeric(FLERR,arg[3]);
+    scale_inplane = force->numeric(FLERR,arg[4]);
   }
 
   nmax = 0;
