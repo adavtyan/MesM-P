@@ -74,7 +74,7 @@ void ComputeEM2QuatAtom::compute_peratom()
   if (atom->nlocal > nmax) {
     memory->destroy(quat_vec);
     nmax = atom->nmax;
-    memory->create(quat_vec,nmax,2,"quat_vec/atom:quat");
+    memory->create(quat_vec,nmax,4,"quat_vec/atom:quat");
     array_atom = quat_vec;
   }
 

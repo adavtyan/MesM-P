@@ -95,7 +95,7 @@ void ComputeEM2VecsAtom::compute_peratom()
   if (atom->nlocal > nmax) {
     memory->destroy(vecs);
     nmax = atom->nmax;
-    memory->create(vecs,nmax,2,"em2_vecs/atom:vecs");
+    memory->create(vecs,nmax,12,"em2_vecs/atom:vecs");
     array_atom = vecs;
   }
 
