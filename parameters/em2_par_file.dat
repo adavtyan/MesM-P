@@ -1,6 +1,13 @@
 # EM2 model parameters in real LAMMPS units (e.g. kcal/mol for energy and A for distance)
 # Per-type moment of ineria is defined in integration_conf.dat
 
+# Flags that control protein concentration dependence of excluded volume, bending, and coupling potential
+# If 0, the dependence of strength of excluded volume and bending energy or gamma on protein concentration
+# changes only when protein composition is >=50%. If 1, they change in full range of protein composition value
+# Flag for K0 (0/1), Flag for gamma dependence (0/1)
+[K-Flags]
+1 1
+
 # I J epsilon k0 sigma
 [Lennard-Jones_2-16]
 1 1 1.553537 0.5 68.0

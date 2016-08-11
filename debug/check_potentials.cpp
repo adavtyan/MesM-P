@@ -1024,7 +1024,7 @@ int main()
   printf("Gradient Energy: %f\n", eng);
 
   eng = mem_comp_pot(mem_comp_pars, atoms);
-  printf("Memory Composition Energy: %f\n", eng);
+  printf("Membrane Composition Energy: %f\n", eng);
 
   eng = prot_comp_pot(prot_comp_pars, atoms);
   printf("Protenin Composition Energy: %f\n", eng);

@@ -50,7 +50,7 @@ using namespace LAMMPS_NS;
 /* ---------------------------------------------------------------------- */
 
 PairEM2::PairEM2(LAMMPS *lmp) : Pair(lmp)
-{
+{ 
 //  if (lmp->citeme) lmp->citeme->add(cite_pair_em2);
 
   single_enable = 0;
@@ -193,8 +193,13 @@ void PairEM2::compute(int eflag, int vflag)
   double ai[3][3],aj[3][3],normi[3],normj[3],nti[3],ntj[3];
 
   // SPAM
-  double spam_factor, lipid_factor;
+  double K_factor, K_force_factor, lipid_factor;
+  double fij, fij_force_factor;
+  bool b_K_force, b_fij_force;
+  bool b_K_force_i, b_K_force_j;
+  bool b_fij_force_i, b_fij_force_j;
   bool b_spam_force, b_spam_force2, m_spam_force;
+  bool b_spam_force_i, b_spam_force_j;
   double iphi_m,jphi_m,iphi_b,jphi_b;
   double dpm,dpb,idphi[2],jdphi[2];
   double rho_one,rho_ave_inv,xi_one,dw;
@@ -202,7 +207,9 @@ void PairEM2::compute(int eflag, int vflag)
   double sum_phi_m, sum_phi_b, sum_phi_m_all, sum_phi_b_all;
   double n_phi_m, n_phi_b, n_phi_m_all, n_phi_b_all;
   // For Protein Coverage potential
-  double pcov_sum_phi_b, pcov_n_phi_b, pcov_sum_phi_b_all, pcov_n_phi_b_all;
+  double pcov_sum_phi_b, pcov_sum_phi_b_all;
+  double pcov_n_phi_b, pcov_n_phi_b_all;
+  double pcov_n_sol_phi_b, pcov_n_sol_phi_b_all;
 
   // Lucy potential
   double epsq2;
@@ -514,16 +521,42 @@ void PairEM2::compute(int eflag, int vflag)
         r = sqrt(rsq);
 
         // Common spam pre-factor used by most potentials, and common boolean functions
-        spam_factor = 0.5*(MIN(MAX(iphi_b,-1.0),0.0) + MIN(MAX(jphi_b,-1.0),0.0));
-        b_spam_force = (iphi_b<=0.0 && iphi_b>=-1.0) || (newton_pair && jphi_b<=0.0 && jphi_b>=-1.0);
+        // When Kpd_flag or Gpd_flag is 1, the full range (i.e. [-1,1]) of protein composition is used
+        // When kpd_flag or Gpd_flag is 0, the potentials are varied only in [-1,0] range of protein composition
+        if (Kpd_flag) {
+          K_factor = 0.25*(MIN(MAX(iphi_b,-1.0),1.0) + MIN(MAX(jphi_b,-1.0),1.0) - 2.0);
+          K_force_factor = 0.25;
+          b_K_force_i = iphi_b<=1.0 && iphi_b>=-1.0;
+          b_K_force_j = jphi_b<=1.0 && jphi_b>=-1.0;
+        } else {
+          K_factor = 0.5*(MIN(MAX(iphi_b,-1.0),0.0) + MIN(MAX(jphi_b,-1.0),0.0));
+          K_force_factor = 0.5;
+          b_K_force_i = iphi_b<=0.0 && iphi_b>=-1.0;
+          b_K_force_j = jphi_b<=0.0 && jphi_b>=-1.0;
+        }
+        if (Gpd_flag) {
+          fij = 0.125*(MAX(MIN(-iphi_b,1.0),-1.0) + MAX(MIN(-jphi_b,1.0),-1.0) + 2.0);
+          fij_force_factor = 0.125;
+          b_fij_force_i = iphi_b<=1.0 && iphi_b>=-1.0;
+          b_fij_force_j = jphi_b<=1.0 && jphi_b>=-1.0;
+        } else {
+          fij = 0.25*(MAX(MIN(-iphi_b,1.0),0.0) + MAX(MIN(-jphi_b,1.0),0.0));
+          fij_force_factor = 0.25;
+          b_fij_force_i = iphi_b<=0.0 && iphi_b>=-1.0;
+          b_fij_force_j = jphi_b<=0.0 && jphi_b>=-1.0;
+        }
+        b_K_force = b_K_force_i || (newton_pair && b_K_force_j);
+        b_fij_force = b_fij_force_i || (newton_pair && b_fij_force_j);
+        b_spam_force_i = b_K_force_i || b_fij_force_i;
+        b_spam_force_j = b_K_force_j || b_fij_force_j;
+        b_spam_force = b_K_force || b_fij_force;
         b_spam_force2 = (iphi_b<=1.0 && iphi_b>=-1.0) || (newton_pair && jphi_b<=1.0 && jphi_b>=-1.0);
 
         // 2-16 LJ-like term for membrane-membrane interaction
         // Forces, energy, and dphi_b are calculated
         if (lj216_pot_flag[itype][jtype]) {
           epsilon = 1.0;
-//          if (spam_flag && iphi_b<=0.0) epsilon *= (1 - lj216_k0[itype][jtype]*MAX(iphi_b,-1.0));
-          if (spam_flag) epsilon *= (1 - lj216_k0[itype][jtype]*spam_factor);
+          if (spam_flag) epsilon *= (1 - lj216_k0[itype][jtype]*K_factor);
 
           r2inv = 1.0/rsq;
           r4inv = r2inv*r2inv;
@@ -542,12 +575,12 @@ void PairEM2::compute(int eflag, int vflag)
 
           // SPAM variable dynamics
           // Calculating -dphi/dt for phi_b only
-          if (spam_flag && b_spam_force) {
+          if (spam_flag && b_K_force) {
             // Contribution from the derivative of prefactor
-            dpb = 0.5*lj216_k0[itype][jtype]*eng_lj;
+            dpb = K_force_factor*lj216_k0[itype][jtype]*eng_lj;
 
-            if (iphi_b<=0.0 && iphi_b>=-1.0) idphi[1] += dpb;
-            if (jphi_b<=0.0 && jphi_b>=-1.0) jdphi[1] += dpb;
+            if (b_K_force_i) idphi[1] += dpb;
+            if (b_K_force_j) jdphi[1] += dpb;
           }
         }
 
@@ -555,7 +588,7 @@ void PairEM2::compute(int eflag, int vflag)
         // Forces, energy, and dphi_b are calculated
         if (lj612_pot_flag[itype][jtype]) {
           epsilon = 1.0;
-          if (spam_flag) epsilon *= (1 - lj612_k0[itype][jtype]*spam_factor);
+          if (spam_flag) epsilon *= (1 - lj612_k0[itype][jtype]*K_factor);
 
           r2inv = 1.0/rsq;
           r6inv = r2inv*r2inv*r2inv;
@@ -574,12 +607,12 @@ void PairEM2::compute(int eflag, int vflag)
 
           // SPAM variable dynamics
           // Calculating -dphi/dt for phi_b only
-          if (spam_flag && b_spam_force) {
+          if (spam_flag && b_K_force) {
             // Contribution from the derivative of prefactor
-            dpb = 0.5*lj612_k0[itype][jtype]*eng_lj;
+            dpb = K_force_factor*lj612_k0[itype][jtype]*eng_lj;
 
-            if (iphi_b<=0.0 && iphi_b>=-1.0) idphi[1] += dpb;
-            if (jphi_b<=0.0 && jphi_b>=-1.0) jdphi[1] += dpb;
+            if (b_K_force_i) idphi[1] += dpb;
+            if (b_K_force_j) jdphi[1] += dpb;
           }
         }
 
@@ -669,7 +702,7 @@ void PairEM2::compute(int eflag, int vflag)
 
           // 4.0*epsilon*(1 - k0*( MAX(iphi_b,1.0) + MAX(jphi_b,1.0) ))*(sigma/r)^2
           epsilon_sigmasq_r2inv = bend_epsilon[itype][jtype]*r2inv;
-          if (spam_flag) epsilon_sigmasq_r2inv *= (1 - bend_k0[itype][jtype]*spam_factor);
+          if (spam_flag) epsilon_sigmasq_r2inv *= (1 - bend_k0[itype][jtype]*K_factor);
 
           // Multiply by lipid rigidity bending factor
           // 0.5*(1 + lambda) + 0.5*(lampda - 1) * 0.5*(phi_m_i + phi_m_j)
@@ -698,9 +731,10 @@ void PairEM2::compute(int eflag, int vflag)
 
           gamma_epsilon  = 0.5*bend_gamma_epsilon[itype][jtype];
           if (spam_flag) {
-            fi = MAX(MIN(-iphi_b,1.0),0.0);
-            fj = MAX(MIN(-jphi_b,1.0),0.0);
-            gamma_epsilon *= 0.25*(fi + fj);
+            //fi = MAX(MIN(-iphi_b,1.0),0.0);
+            //fj = MAX(MIN(-jphi_b,1.0),0.0);
+            //gamma_epsilon *= 0.25*(fi + fj);
+            gamma_epsilon *= fij;
           }
           gamma = gamma_epsilon*alpha_sq;
           gamma_r = gamma*r;
@@ -776,24 +810,26 @@ void PairEM2::compute(int eflag, int vflag)
           // Calculating -dphi/dt for phi_b only
           if (spam_flag && b_spam_force) {
 
+            dpb = 0.0;
             // Contribution from the derivative of prefactor
-            dpb = 0.5*bend_epsilon[itype][jtype]*bend_k0[itype][jtype]*lipid_factor*r2inv*uij;
+            if (b_K_force) dpb += K_force_factor*bend_epsilon[itype][jtype]*bend_k0[itype][jtype]*lipid_factor*r2inv*uij;
             // Contribution from the derivative of gamma
-            dpb -= 0.25*epsilon_sigmasq_r2inv*bend_gamma_epsilon[itype][jtype]*(thetai_gamma_r - thetaj_gamma_r)*alpha_sq*r;
+            if (b_fij_force) dpb -= fij_force_factor*epsilon_sigmasq_r2inv*bend_gamma_epsilon[itype][jtype]*(thetai_gamma_r - thetaj_gamma_r)*alpha_sq*r;
             
-            if (iphi_b<=0.0 && iphi_b>=-1.0) idphi[1] += dpb;
-            if (jphi_b<=0.0 && jphi_b>=-1.0) jdphi[1] += dpb;
+            if (b_spam_force_i) idphi[1] += dpb;
+            if (b_spam_force_j) jdphi[1] += dpb;
           }
 
           // Calculate -dphi/dt for phi_m only
           // Contribution from the derivative of prefactor
           if (spam_flag && m_spam_force) {
-            dpm = -0.25*(lipid_lambda[itype][jtype] - 1.0)*bend_epsilon[itype][jtype]*(1 - bend_k0[itype][jtype]*spam_factor)*r2inv*uij;
+            dpm = -0.25*(lipid_lambda[itype][jtype] - 1.0)*bend_epsilon[itype][jtype]*(1 - bend_k0[itype][jtype]*K_factor)*r2inv*uij;
 
             if (iphi_m<=1.0 && iphi_m>=-1.0) idphi[0] += dpb;
             if (jphi_m<=1.0 && jphi_m>=-1.0) jdphi[0] += dpb;
           }
         }
+
 
         // Oligomerization potential
         // Torques and energy are calculated
@@ -850,8 +886,13 @@ void PairEM2::compute(int eflag, int vflag)
           alpha_sq = alphai*alphai + alphaj*alphaj;
 
           // gamma_epsilon = (1/8)*(gamma_epsilon_i*fi + gamma_epsilon_j*fj)
-          fi = MAX(MIN(-iphi_b,1.0),0.0);
-          fj = MAX(MIN(-jphi_b,1.0),0.0);
+          if (Gpd_flag) {
+            fi = 0.5*(MAX(MIN(-iphi_b,1.0),-1.0) + 1.0);
+            fj = 0.5*(MAX(MIN(-jphi_b,1.0),-1.0) + 1.0);
+          } else {
+            fi = MAX(MIN(-iphi_b,1.0),0.0);
+            fj = MAX(MIN(-jphi_b,1.0),0.0);
+          }
           gamma_epsilon = 0.125*(ic_gamma_epsilon[itype]*fi + ic_gamma_epsilon[jtype]*fj);
 
           gamma = gamma_epsilon*alpha_sq;
@@ -935,12 +976,14 @@ void PairEM2::compute(int eflag, int vflag)
             if (iphi_b<=1.0 && iphi_b>=-1.0 && n_c[i]>0.0) {
 
               idphi[1] += ic_lambda_k[itype]*uij*r2inv/n_c[i];
-              if (iphi_b<=0.0) idphi[1] += ic_gamma_epsilon[itype]*dpb;
+              if (Gpd_flag) idphi[1] += 0.5*ic_gamma_epsilon[itype]*dpb;
+              else if (iphi_b<=0.0) idphi[1] += ic_gamma_epsilon[itype]*dpb;
             }
             if (newton_pair || j < nlocal) {
               if (jphi_b<=1.0 && jphi_b>=-1.0 && n_c[j]>0.0) {
                 jdphi[1] += ic_lambda_k[jtype]*uij*r2inv/n_c[j];
-                if (jphi_b<=0.0) jdphi[1] += ic_gamma_epsilon[jtype]*dpb;
+                if (Gpd_flag) jdphi[1] += 0.5*ic_gamma_epsilon[jtype]*dpb;
+                else if (jphi_b<=0.0) jdphi[1] += ic_gamma_epsilon[jtype]*dpb;
               }
             }
           }
@@ -1026,6 +1069,7 @@ void PairEM2::compute(int eflag, int vflag)
   n_phi_m = n_phi_b = 0.0;
   pcov_sum_phi_b = 0.0;
   pcov_n_phi_b = 0.0;
+  pcov_n_sol_phi_b = 0.0;
 
   // One-body terms
   // idphi here is multipied by spam_gamma in the end
@@ -1139,8 +1183,12 @@ void PairEM2::compute(int eflag, int vflag)
     // Sum over phi_b on the membrane
     // To be used for Protein Coverage potential
     if (spam_flag && pcov_pot_flag[itype]) {
-      pcov_sum_phi_b += MIN(MAX(iphi_b,-1.0),1.0);
-      pcov_n_phi_b += 1.0;
+      if (pcov_pot_flag[itype]==1) {
+        pcov_sum_phi_b += MIN(MAX(iphi_b,-1.0),1.0);
+        pcov_n_phi_b += 1.0;
+      } else {
+        pcov_n_sol_phi_b += 1.0;
+      }
     }
 
     dphi[i][0] += spam_gamma*idphi[0];
@@ -1159,6 +1207,7 @@ void PairEM2::compute(int eflag, int vflag)
 
   MPI_Allreduce(&pcov_sum_phi_b,&pcov_sum_phi_b_all,1,MPI_DOUBLE,MPI_SUM,world);
   MPI_Allreduce(&pcov_n_phi_b,&pcov_n_phi_b_all,1,MPI_DOUBLE,MPI_SUM,world);
+  MPI_Allreduce(&pcov_n_sol_phi_b,&pcov_n_sol_phi_b_all,1,MPI_DOUBLE,MPI_SUM,world);
 
   // Protein Coverage potential
   // Energy calculation
@@ -1286,7 +1335,7 @@ void PairEM2::allocate()
   memory->create(bend_pot_flag,n+1,n+1,"pair:bend_pot_flag");
   memory->create(bend_epsilon,n+1,n+1,"pair:bend_epsilon");
   memory->create(bend_k0,n+1,n+1,"pair:bend_k0");
-  memory->create(bend_gamma_epsilon,n+1,n+1,"pair:");
+  memory->create(bend_gamma_epsilon,n+1,n+1,"pair:bend_gamma_epsilon");
   memory->create(lipid_factor_flag,n+1,n+1,"pair:lipid_factor_flag");
   memory->create(lipid_lambda,n+1,n+1,"pair:lipid_lambda");
   memory->create(olig_pot_flag,n+1,n+1,"pair:olig_pot_flag");
@@ -1312,8 +1361,6 @@ void PairEM2::allocate()
   memory->create(prot_stat_flag,n+1,"pair:prot_stat_flag");
   memory->create(pcov_pot_flag,n+1,"pair:pcov_pot_flag");
 
-  comp_flag = 0;
-  flow_term_flag = 0;
   for (int i = 1; i <= n; i++) {
     ic_pot_flag[i] = 0;
     cc_pot_flag[i] = 0;
@@ -1372,10 +1419,15 @@ void PairEM2::settings(int narg, char **arg)
   cut_global = force->numeric(FLERR,arg[0]);
 
   spam_flag = 0; 
+  flow_term_flag = 0;
 
-  // Need to check if this is a right place for this
+  comp_flag = 0;
   mem_stat = 0.0;
   prot_stat = 0.0;
+
+  // Flags for protein concentration dependence of Ks and gamma.
+  Kpd_flag = 0;
+  Gpd_flag = 0;
 
   // reset cutoffs that have been explicitly set
 
@@ -1445,7 +1497,7 @@ void PairEM2::read_parameters()
   FILE *file;
   int file_state, narg=0, iarg_line=-1;
   char ln[1024], *line, *arg[16];
-  enum File_States{FS_NONE=0, FS_LJ216, FS_LJ612, FS_LUCY, FS_LUCY_TB, FS_EX12, FS_GAUSS, FS_BEND, FS_OLIG, FS_COUP_IC, FS_COUP_CC, FS_MEM_COMP, FS_MEM_COMP_POLY, FS_BAR_COMP, FS_COMP_CUT, FS_COMP_STAT, FS_FLOW, FS_SPAM, FS_PCOV, FS_LIP_FACTOR};
+  enum File_States{FS_NONE=0, FS_LJ216, FS_LJ612, FS_LUCY, FS_LUCY_TB, FS_EX12, FS_GAUSS, FS_BEND, FS_OLIG, FS_COUP_IC, FS_COUP_CC, FS_MEM_COMP, FS_MEM_COMP_POLY, FS_BAR_COMP, FS_COMP_CUT, FS_COMP_STAT, FS_FLOW, FS_SPAM, FS_PCOV, FS_LIP_FACTOR, FS_K_FLAGS};
 
   int me = comm->me;
 
@@ -1815,6 +1867,18 @@ void PairEM2::read_parameters()
       spam_flag = flag1;
       spam_gamma = epsilon_val;
       break;
+    case FS_K_FLAGS:
+      if (iarg_line!=0 || narg!=2) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (K-Flags)");
+      if (me==0) print_log("Reading K-Flags\n");
+
+      flag1 = atoi(arg[0]);
+      flag2 = atoi(arg[1]);
+
+      if ((flag1!=0 && flag1!=1) || (flag2!=0 && flag2!=1)) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (K-Flags)");
+
+      Kpd_flag = flag1;
+      Gpd_flag = flag2;
+      break;
     case FS_NONE:
       iarg_line = -1;
       if (strcmp(line, "[Lennard-Jones_2-16]")==0)
@@ -1855,6 +1919,8 @@ void PairEM2::read_parameters()
         file_state = FS_FLOW;
       else if (strcmp(line, "[SPAM_Flag]")==0)
         file_state = FS_SPAM;
+      else if (strcmp(line, "[K-Flags]")==0)
+        file_state = FS_K_FLAGS;
       break;
     }
   }
@@ -2238,7 +2304,7 @@ void PairEM2::write_restart(FILE *fp)
 void PairEM2::read_restart(FILE *fp)
 {
   read_restart_settings(fp);
-  allocate();
+  if (!allocated) allocate();
 
   int i,j;
   int me = comm->me;
@@ -2430,7 +2496,7 @@ void PairEM2::read_restart(FILE *fp)
         }
         MPI_Bcast(&olig_epsilon[i][j],1,MPI_DOUBLE,0,world);
         MPI_Bcast(&aolig[i][j],1,MPI_INT,0,world);
-      } 
+      }
     }
   }
 }
@@ -2445,6 +2511,8 @@ void PairEM2::write_restart_settings(FILE *fp)
   fwrite(&offset_flag,sizeof(int),1,fp);
   fwrite(&spam_flag,sizeof(int),1,fp);
   fwrite(&flow_term_flag,sizeof(int),1,fp);
+  fwrite(&Kpd_flag,sizeof(int),1,fp);
+  fwrite(&Gpd_flag,sizeof(int),1,fp);
   fwrite(&mix_flag,sizeof(int),1,fp);
   fwrite(&comp_flag,sizeof(int),1,fp);
   fwrite(&mem_stat_epsilon,sizeof(double),1,fp);
@@ -2473,6 +2541,8 @@ void PairEM2::read_restart_settings(FILE *fp)
     fread(&offset_flag,sizeof(int),1,fp);
     fread(&spam_flag,sizeof(int),1,fp);
     fread(&flow_term_flag,sizeof(int),1,fp);
+    fread(&Kpd_flag,sizeof(int),1,fp);
+    fread(&Gpd_flag,sizeof(int),1,fp);
     fread(&mix_flag,sizeof(int),1,fp);
     fread(&comp_flag,sizeof(int),1,fp);
     fread(&mem_stat_epsilon,sizeof(double),1,fp);
@@ -2488,6 +2558,8 @@ void PairEM2::read_restart_settings(FILE *fp)
   MPI_Bcast(&offset_flag,1,MPI_INT,0,world);
   MPI_Bcast(&spam_flag,1,MPI_INT,0,world);
   MPI_Bcast(&flow_term_flag,1,MPI_INT,0,world);
+  MPI_Bcast(&Kpd_flag,1,MPI_INT,0,world);
+  MPI_Bcast(&Gpd_flag,1,MPI_INT,0,world);
   MPI_Bcast(&mix_flag,1,MPI_INT,0,world);
   MPI_Bcast(&comp_flag,1,MPI_INT,0,world);
   MPI_Bcast(&mem_stat_epsilon,1,MPI_DOUBLE,0,world);

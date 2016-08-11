@@ -124,6 +124,7 @@ class PairEM2 : public Pair {
   int spam_flag; 
   int flow_term_flag;
   double spam_gamma;
+  double Kpd_flag, Gpd_flag;
 
   // Variables for density, composition gradient, and number of neighbours calculations
   int nmax;
