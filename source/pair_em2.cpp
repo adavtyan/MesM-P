@@ -1132,6 +1132,7 @@ void PairEM2::compute(int eflag, int vflag)
         eng += mem_comp_epsilon[itype]*0.1*pow(iphi_m,10.0);
       } else {
         // General polynomial potential
+        // mem_comp_poly_coeff are multipled by mem_comp_epsilon on parameter input for efficency 
 
         dpm = 0.0;
         for (j=0;j<mem_comp_npoly[itype];j++) {
@@ -1187,6 +1188,8 @@ void PairEM2::compute(int eflag, int vflag)
         pcov_sum_phi_b += MIN(MAX(iphi_b,-1.0),1.0);
         pcov_n_phi_b += 1.0;
       } else {
+        pcov_sum_phi_b += MIN(MAX(iphi_b,-1.0),1.0);
+        pcov_n_phi_b += 1.0;
         pcov_n_sol_phi_b += 1.0;
       }
     }
@@ -1740,11 +1743,12 @@ void PairEM2::read_parameters()
       }
       break;
     case FS_MEM_COMP_POLY:
-      if (narg<3) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Membrane Composition Poly Pot)");
+      if (narg<4) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Membrane Composition Poly Pot)");
       if (me==0) print_log("Membrane Composition Poly potential flag on\n");
       epsilon_val = atof(arg[1]);
-      npol_val = atoi(arg[2]);
-      if (npol_val<=0 || narg-3!=npol_val+1) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Membrane Composition Poly Pot)");
+      epsilon2_val = atof(arg[2]);
+      npol_val = atoi(arg[3]);
+      if (npol_val<=0 || narg-4!=npol_val+1) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Membrane Composition Poly Pot)");
 
       memory->destroy(pol_exp);
       memory->destroy(pol_coeff);
@@ -1753,10 +1757,10 @@ void PairEM2::read_parameters()
 
       npol = 0;
       for (i=0;i<=npol_val;i++) {
-        coeff_one = atof(arg[3+i]);
+        coeff_one = atof(arg[4+i]);
         if (coeff_one!=0.0) {
           pol_exp[npol] = (double)i;
-          pol_coeff[npol] = coeff_one;
+          pol_coeff[npol] = coeff_one*epsilon2_val;
           npol++;
         }
       }
@@ -1768,6 +1772,7 @@ void PairEM2::read_parameters()
         if (mem_comp_pot_flag[i]==1) error->all(FLERR,"Pair_style EM2: Repeated definition of parameters for a type (Membrane Composition Poly Pot)");
         mem_comp_pot_flag[i] = 1;
         mem_comp_xi_epsilon[i] = epsilon_val;
+        mem_comp_epsilon[i] = epsilon2_val;
         mem_comp_npoly[i] = npol;
         if (mem_comp_poly_exp[i]!=NULL) delete [] mem_comp_poly_exp[i];
         if (mem_comp_poly_coeff[i]!=NULL) delete [] mem_comp_poly_coeff[i];
