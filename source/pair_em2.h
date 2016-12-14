@@ -115,6 +115,7 @@ class PairEM2 : public Pair {
   int *mem_stat_flag, *prot_stat_flag;
   double mem_stat_epsilon, prot_stat_epsilon;
   double mem_stat, prot_stat;
+  double mem_stat_alpha0, prot_stat_alpha0;
 
  // Protein Coverage potential variables
  int *pcov_pot_flag;

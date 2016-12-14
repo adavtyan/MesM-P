@@ -51,8 +51,6 @@ using namespace LAMMPS_NS;
 
 PairEM2::PairEM2(LAMMPS *lmp) : Pair(lmp)
 { 
-//  if (lmp->citeme) lmp->citeme->add(cite_pair_em2);
-
   single_enable = 0;
   writedata = 0;
 
@@ -868,8 +866,6 @@ void PairEM2::compute(int eflag, int vflag)
           if (n_c[i]>0.0) epsilon += ic_lambda_k[itype]*MIN(MAX(iphi_b,-1.0),1.0)/n_c[i];
           if (n_c[j]>0.0) epsilon += ic_lambda_k[jtype]*MIN(MAX(jphi_b,-1.0),1.0)/n_c[j];
 
-//          epsilon = ic_lambda_k[itype]*MIN(MAX(iphi_b,-1.0),1.0) + ic_lambda_k[jtype]*MIN(MAX(jphi_b,-1.0),1.0);
-
           rinv = 1.0/r;
           r2inv = 1.0/rsq;
 
@@ -1215,16 +1211,12 @@ void PairEM2::compute(int eflag, int vflag)
   // Protein Coverage potential
   // Energy calculation
   if (spam_flag && pcov_n_phi_b_all>0.0) {
-//    if (comm->me==0) printf("step: %d pcov_sum_phi_b_all %f pcov_n_phi_b_all %f\n", update->ntimestep, pcov_sum_phi_b_all, pcov_n_phi_b_all);
-
     pcov_sum_phi_b_all *= 0.5/pcov_n_phi_b_all;
 
     if (comm->me==0) {
       eng = pcov_epsilon*pow(pcov_sum_phi_b_all - 0.5 + pcov_eta0, 2.0);
       energy[ET_PCOV] += eng;
       
-//      printf("step: %d pcov_sum_phi_b_all %f pcov_n_phi_b_all %f eng %f\n", update->ntimestep, pcov_sum_phi_b_all, pcov_n_phi_b_all, eng);
-    
       if (eflag) evdwl = factor_lj*eng;
 
       if (eflag_global) eng_vdwl += evdwl;
@@ -1233,10 +1225,10 @@ void PairEM2::compute(int eflag, int vflag)
   }
 
   // Propogate mem_stat and prot_stat
-  // stat += epsilon*sum_phi/n_phi
+  // stat += epsilon*(sum_phi/n_phi - alpha_0)
 
-  if (n_phi_m_all>0.0) mem_stat += update->dt*mem_stat_epsilon*sum_phi_m_all/n_phi_m_all;
-  if (n_phi_b_all>0.0) prot_stat += update->dt*prot_stat_epsilon*sum_phi_b_all/n_phi_b_all;
+  if (n_phi_m_all>0.0) mem_stat += update->dt*mem_stat_epsilon*(sum_phi_m_all/n_phi_m_all - mem_stat_alpha0);
+  if (n_phi_b_all>0.0) prot_stat += update->dt*prot_stat_epsilon*(sum_phi_b_all/n_phi_b_all - prot_stat_alpha0);
 
   // Second one-body loop
   // idphi here is NOT multipied by spam_gamma
@@ -1258,8 +1250,6 @@ void PairEM2::compute(int eflag, int vflag)
       if (pcov_pot_flag[itype] && pcov_n_phi_b_all>0.0) {
         if (iphi_b>-1.0 && iphi_b<1.0) {
           idphi[1] -= pcov_epsilon*(pcov_sum_phi_b_all - 0.5 + pcov_eta0)/pcov_n_phi_b_all;
-//          if (atom->tag[i]==1) printf("step: %d dphi: %f\n",update->ntimestep,pcov_epsilon*(pcov_sum_phi_b_all - 0.5 + pcov_eta0)/pcov_n_phi_b_all);
-          //idphi[1] -= spam_gamma*pcov_epsilon*(pcov_sum_phi_b_all - 0.5 + pcov_eta0)/pcov_n_phi_b_all;
         }
       }
 
@@ -1355,8 +1345,6 @@ void PairEM2::allocate()
   memory->create(mem_comp_epsilon,n+1,"pair:mem_comp_epsilon");
   memory->create(mem_comp_xi_epsilon,n+1,"pair:mem_comp_xi_epsilon");
   memory->create(mem_comp_npoly,n+1,"pair:mem_comp_npoly");
-//  memory->create(mem_comp_poly_exp,n+1,1,"pair:mem_comp_poly_exp");
-//  memory->create(mem_comp_poly_coeff,n+1,1,"pair:mem_comp_poly_coeff");
   memory->create(prot_comp_pot_flag,n+1,"pair:prot_comp_pot_flag");
   memory->create(prot_comp_epsilon,n+1,"pair:prot_comp_epsilon");
   memory->create(prot_comp_xi_epsilon,n+1,"pair:prot_comp_xi_epsilon");
@@ -1427,6 +1415,8 @@ void PairEM2::settings(int narg, char **arg)
   comp_flag = 0;
   mem_stat = 0.0;
   prot_stat = 0.0;
+  mem_stat_alpha0 = 0.0;
+  prot_stat_alpha0 = 0.0;
 
   // Flags for protein concentration dependence of Ks and gamma.
   Kpd_flag = 0;
@@ -1809,10 +1799,17 @@ void PairEM2::read_parameters()
       break;
     case FS_COMP_STAT:
       if (iarg_line==0) {
-        if (narg!=2) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Composition Stat Header)");
+        if (narg!=2 and narg!=4) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Composition Stat Header)");
         if (me==0) print_log("Reading Composition Stat flags\n");
         mem_stat_epsilon = atof(arg[0]);
         prot_stat_epsilon = atof(arg[1]);
+        mem_stat_alpha0 = prot_stat_alpha0 = 0.0;
+        if (narg==4) {
+          mem_stat_alpha0 = atof(arg[2]);
+          prot_stat_alpha0 = atof(arg[3]);
+          if (mem_stat_alpha0<-1.0 || mem_stat_alpha0>1.0 || prot_stat_alpha0<-1.0 || prot_stat_alpha0>1.0)
+            error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Composition Stat Header)");
+        }
       } else {
         if (narg!=3) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Composition Stat)");
         if (me==0) print_log("Reading Composition Stat flags\n");
@@ -2524,6 +2521,8 @@ void PairEM2::write_restart_settings(FILE *fp)
   fwrite(&prot_stat_epsilon,sizeof(double),1,fp);
   fwrite(&mem_stat,sizeof(double),1,fp);
   fwrite(&prot_stat,sizeof(double),1,fp);
+  fwrite(&mem_stat_alpha0,sizeof(double),1,fp);
+  fwrite(&prot_stat_alpha0,sizeof(double),1,fp);
   fwrite(&pcov_epsilon,sizeof(double),1,fp);
   fwrite(&pcov_eta0,sizeof(double),1,fp);
   fwrite(&spam_gamma,sizeof(double),1,fp);
@@ -2554,6 +2553,8 @@ void PairEM2::read_restart_settings(FILE *fp)
     fread(&prot_stat_epsilon,sizeof(double),1,fp);
     fread(&mem_stat,sizeof(double),1,fp);
     fread(&prot_stat,sizeof(double),1,fp);
+    fread(&mem_stat_alpha0,sizeof(double),1,fp);
+    fread(&prot_stat_alpha0,sizeof(double),1,fp);
     fread(&pcov_epsilon,sizeof(double),1,fp);
     fread(&pcov_eta0,sizeof(double),1,fp);
     fread(&spam_gamma,sizeof(double),1,fp);
@@ -2571,6 +2572,8 @@ void PairEM2::read_restart_settings(FILE *fp)
   MPI_Bcast(&prot_stat_epsilon,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&mem_stat,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&prot_stat,1,MPI_DOUBLE,0,world);
+  MPI_Bcast(&mem_stat_alpha0,1,MPI_DOUBLE,0,world);
+  MPI_Bcast(&prot_stat_alpha0,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&pcov_epsilon,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&pcov_eta0,1,MPI_DOUBLE,0,world);
   MPI_Bcast(&spam_gamma,1,MPI_DOUBLE,0,world);
@@ -2586,45 +2589,6 @@ void PairEM2::read_restart_settings(FILE *fp)
     comp_rcut_inv = 1.0/comp_rcut;
   }
 }
-
-/* ----------------------------------------------------------------------
-   proc 0 writes to data file
-------------------------------------------------------------------------- */
-
-/*void PairEM2::write_data(FILE *fp)
-{
-  int i;
-  for (i = 1; i <= atom->ntypes; i++)
-    fprintf(fp,"%d",i);
-    if (lj216_pot_flag[i][i]) fprintf(fp," %g %g %g", lj216_epsilon[i][i],lj216_k0[i][i],lj216_sigma[i][i]);
-    if (lucy_pot_flag[i][i]) fprintf(fp," %g %g", lucy_epsilon[i][i],lucy_sigma[i][i]);
-    if (bend_pot_flag[i][i]) fprintf(fp," %g %g %g", bend_epsilon[i][i],bend_k0[i][i],bend_gamma_epsilon[i][i]);
-//    if (bend_pot_flag[i][i]) fprintf(fp," %g %g %g %g", bend_epsilon[i][i],bend_k0[i][i],bend_sigmasq[i][i],bend_gamma_epsilon[i][i]);
-    if (olig_pot_flag[i][i]) fprintf(fp," %g %d", olig_epsilon[i][i],aolig[i][i]);
-    if (ic_pot_flag[i]) fprintf(fp," %g %g %g", ic_lambda_m[i], ic_lambda_k[i], ic_gamma_epsilon[i]);
-    if (cc_pot_flag[i]) fprintf(fp," %g %g", cc_epsilon[i], cc_zeta0[i]);
-    fprintf(fp,"\n");
-}*/
-
-/* ----------------------------------------------------------------------
-   proc 0 writes all pairs to data file
-------------------------------------------------------------------------- */
-
-/*void PairEM2::write_data_all(FILE *fp)
-{
-  int i,j;
-  for (i = 1; i <= atom->ntypes; i++)
-    for (j = i; j <= atom->ntypes; j++)
-      fprintf(fp,"%d %d",i,j);
-      if (lj216_pot_flag[i][j]) fprintf(fp," %g %g %g", lj216_epsilon[i][j],lj216_k0[i][j],lj216_sigma[i][j]);
-      if (lucy_pot_flag[i][j]) fprintf(fp," %g %g", lucy_epsilon[i][j],lucy_sigma[i][j]);
-      if (bend_pot_flag[i][j]) fprintf(fp," %g %g %g", bend_epsilon[i][j],bend_k0[i][j],bend_gamma_epsilon[i][j]);
-//      if (bend_pot_flag[i][j]) fprintf(fp," %g %g %g %g", bend_epsilon[i][j],bend_k0[i][j],bend_sigmasq[i][j],bend_gamma_epsilon[i][j]);
-      if (olig_pot_flag[i][j]) fprintf(fp," %g %d", olig_epsilon[i][j],aolig[i][j]);
-      if (ic_pot_flag[i]) fprintf(fp," %g %g %g", ic_lambda_m[i], ic_lambda_k[i], ic_gamma_epsilon[i]);
-      if (cc_pot_flag[i]) fprintf(fp," %g %g", cc_epsilon[i], cc_zeta0[i]);
-      fprintf(fp," %g\n", cut[i][j]);
-}*/
 
 int PairEM2::pack_forward_comm(int n, int *list, double *buf,
                                    int pbc_flag, int *pbc)

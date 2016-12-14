@@ -1,47 +1,115 @@
+# This script allows generation the toplogy file
+# for LAMMPS simulations of MesM-P system
+# Either flat membrane or vesicular systems can be created
+
 import sys
 import random as rn
 import numpy as np
 from add_solvent_tools import *
 
-# Number of membrane and protein particles
-n_mem = 5882
-n_prot = 89134
-n_tot = n_mem + n_prot
+# Main switch keys
+ves = True   # Is this a vesicular system or not
+gen = True   # Generate coordinates and quats or read from config file
+two_ty_sol = True   # Use two type of solvents, where one cannot have protein concetration
+data_file = "data.em2"   # data file name
+conf_file = "config.em2" # default name of the config file
 
-# Is this a vesicular system or not
-ves = False
+# Defining parameters for flat and vesicular systems
+if ves:
+  Lx = Ly = Lz = 3600.0   # Box dimentions
+  n_mem = 5882    # Number of mebrane particles
+  mrad = 73.9542  # The size of the membrane particles along the surface 
+  srad = 78.8927  # The size of the solvent particles
+  srad_min = 70.0 # Minimal distance between two solvent particles
+  # The number of solvent particles will be calculated automatically
+else:
+  # Box dimentions
+  Lx = Ly = 5000.0
+  Lz = 4000.0
+  mrad = 76.78     # The size of the membrane particles
+  mradsq = mrad*mrad;
+  srad = 78.8927   # The size of the solvent particles
+  sqr3half = 0.866025 # sqrt(3)/2
+  srad_min = 70.0  # Minimal distance between two solvent particles
+  # The number of membrane and solvent particles will be calculated automatically
 
-# Generate coordinates and quats or read from old config
-gen = True
-two_ty_sol = True
-conf_file = "config.em2"
-Lx = Ly = Lz = 3600.0 # default box dimentions
-Lx = Ly = 5000.0
-Lz = 4000.0
-z0 = Lz/2.0 # Z coordinate of the sheet, for plain membrane
-mrad = 76.78
-mradsq = mrad*mrad;
-srad = 78.8927
-sqr3half = 0.866025 # sqrt(3)/2
-
-# data file name
-data_file = "data.em2"
-
-R = 0
+R = 0.0
 com = np.array([0.0, 0.0, 0.0])
 xyz = []
 quat = []
 types = []
 if gen:
   if ves:
-    pass
+    print "Generating a membrane vesicle ..."
+
+    # Finding vesicle radius based on m_mem and diameter of particles 
+    R = np.sqrt(n_mem * mrad*mrad / (4.0*np.pi))
+    print "R: ", R
+
+    # Find the center of the box
+    x0 = Lx/2.0
+    y0 = Ly/2.0
+    z0 = Lz/2.0
+
+    # Generate equially spaced vesicle using Fibonacci lattice method
+    golden_angle = np.pi * (3.0 - np.sqrt(5.0))
+    theta = golden_angle * np.arange(n_mem)
+    zu = np.linspace(1.0 - 1.0 / n_mem, 1.0 / n_mem - 1.0, n_mem)
+    ru = np.sqrt(1.0 - zu * zu)
+    xu = ru * np.cos(theta)
+    yu = ru * np.sin(theta)
+
+    for i in range(n_mem):
+      x = R * xu[i] + x0
+      y = R * yu[i] + y0
+      z = R * zu[i] + z0
+      xyz.append([x, y, z])
+      types.append(1)
+
+      # Finding quaternion
+      z1 = np.sqrt(0.5*(1.0 + zu[i]))
+      xy2 = xu[i]**2 + yu[i]**2
+      qw = z1
+      qx = yu[i]*z1*(zu[i] - 1.0)/xy2
+      qy = -xu[i]*z1*(zu[i] - 1.0)/xy2
+      qz = 0.0
+
+      quat.append([qw, qx, qy, qz])
+
+    n_prot = int(round((Lx/srad)*(Ly/srad)*(Lz/srad) - float(n_mem)))
+
+    n_tot = n_mem + n_prot
+
+    print "n_mem:", n_mem
+    print "n_prot:", n_prot
+
+    # Randomly distribute solvent particles relatove to membrane
+    box = [[0, Lx], [0, Ly], [0, Lz]]
+    sol_xyz = add_solvent(n_prot, box, srad_min, 3)
+
+    # Add solvent to the membrane system
+    # Shift each solvent particle based on membrane position
+    for ix in sol_xyz:
+      ty = 2
+      if two_ty_sol and ((ix[0]-x0)**2 + (ix[1]-y0)**2 + (ix[2]-z0)**2<R**2): ty = 3
+      xyz.append([ix[0], ix[1], ix[2]])
+      quat.append([1.0, 0.0, 0.0, 0.0])
+      types.append(ty)
+
   else:
+    # First generate a flat sheet membrane
+    print "Generating a flat membrane ..."
+
+    # Find the lattice dimentions
     nx = int(round(Lx/mrad))
     ny = int(round(Ly/(sqr3half*mrad)))
     n_mem = nx*ny;
 
-    print nx, ny, n_mem
+    z0 = Lz/2.0 # Z coordinate of the sheet
 
+    print "nx: %d ny: %d" % (nx, ny)
+
+    # Place the membrane particles onto the lattice
     for i in range(ny):
       for j in range(nx):
         x0 = 0.0
@@ -53,20 +121,18 @@ if gen:
         xyz.append([x,y,z0])
         types.append(1)
 
-#        print x, y, xyz[-1]
-
         quat.append([1.0, 0.0, 0.0, 0.0])
 
     n_prot = int(round((Lx/srad)*(Ly/srad)*(Lz/srad) - float(n_mem)))
 
     n_tot = n_mem + n_prot
 
-    print n_mem
-    print n_prot
+    print "n_mem:", n_mem
+    print "n_prot:", n_prot
 
     # Randomly distribute solvent particles relatove to membrane
     box = [[0, Lx], [0, Ly], [0, Lz-mrad]]
-    sol_xyz = add_solvent(n_prot, box, 70.0, 3)
+    sol_xyz = add_solvent(n_prot, box, srad_min, 3)
 
     # Add solvent to the membrane system
     # Shift each solvent particle based on membrane position
@@ -116,14 +182,15 @@ if ves:
   # Membrane center of mass
   com = np.array([0.0, 0.0, 0.0])
   for i in range(n_mem):
-    com += xyz[i,0]
+    com += xyz[i][0]
   com /= n_mem
 
-  R = 0.0
-  for i in range(n_mem):
-    dr = xyz[i] - com
-    R += np.linalg.norm(xyz[i] - com)
-  R /= n_mem
+  if R==0.0:
+    print R
+    for i in range(n_mem):
+      dr = xyz[i] - com
+      R += np.linalg.norm(xyz[i] - com)
+    R /= n_mem
 
   for i in range(n_tot):
     # Membrane composition
@@ -175,14 +242,14 @@ for i in range(n_tot):
   sum_phi_m += phi_m[i]
   if i>=n_mem and ( (ves and np.linalg.norm(xyz[i] - com)>R) or (not ves and xyz[i][2]>z0) ):
     sum_phi_b += phi_b[i]
-print sum_phi_m, sum_phi_b
+print "Total phi_m and phi_b:", sum_phi_m, sum_phi_b
 
 # write data file
 
 out = open(data_file, 'w')
 
 # Data file header
-out.write("EM2 data file\n\n")
+out.write("MesM-P data file\n\n")
 
 out.write("%d atoms\n" % n_tot)
 out.write("0 bonds\n")
@@ -213,20 +280,15 @@ else: out.write("\n")
 
 # Atoms
 
-# For debuging
 n_tot = len(xyz)
 
 out.write("Atoms\n\n")
 for i in range(n_tot):
-#  ty = 1
-#  if i>=n_mem: ty = 2
   ty = types[i]
-#  I = 6
   q = quat[i]
   x = xyz[i]
   phm = phi_m[i]
   phb = phi_b[i]
   out.write("%d %d %f %f %f %f %.12f %.12f %f %f %f\n" % (i+1, ty, q[0], q[1], q[2], q[3], phm, phb, x[0], x[1], x[2]))
-#  out.write("%d %d %f %f %f %f %f %f %f %f %f %f %f %f\n" % (i+1, ty, I, I, I, q[0], q[1], q[2], q[3], phm, phb, x[0], x[1], x[2]))
 
 out.close()
