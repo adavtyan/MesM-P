@@ -1,1 +1,1 @@
-# EM2_LAMMPS
+# This repository contains a code for simulations of Mesoscopic Membrane with Proteins Model (MesM-P) in LAMMPS. MesM-P enables large-scale modeling of protein-mediated membrane shape and topology changes using mesoscale representation, based on membrane elastic model and Smooth Particle Applied Mechanics (SPAM).
