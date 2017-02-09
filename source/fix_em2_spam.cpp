@@ -204,7 +204,7 @@ void FixEM2SPAM::read_conf_file(char *filename)
     flag2 = atoi(arg[5]);
     flag3 = atoi(arg[6]);
 
-    force->bounds(arg[0],atom->ntypes,ilo,ihi);
+    force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
 
     if ((flag1!=0 && flag1!=1) || (flag2!=0 && flag2!=1) || (flag3!=0 && flag3!=1))
       error->all(FLERR,"Fix em2/spam: Configuration file format error");

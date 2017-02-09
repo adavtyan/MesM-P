@@ -1445,8 +1445,8 @@ void PairEM2::coeff(int narg, char **arg)
   if (!allocated) allocate();
 
   int ilo,ihi,jlo,jhi;
-  force->bounds(arg[0],atom->ntypes,ilo,ihi);
-  force->bounds(arg[1],atom->ntypes,jlo,jhi);
+  force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+  force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
   int len = strlen(arg[2]) + 1;
   parfile = new char[len];
@@ -1527,8 +1527,8 @@ void PairEM2::read_parameters()
       k0_val = atof(arg[3]);
       sigma_val = atof(arg[4]);
 
-      force->bounds(arg[0],atom->ntypes,ilo,ihi);
-      force->bounds(arg[1],atom->ntypes,jlo,jhi);
+      force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
       for (i = ilo; i <= ihi; i++) {
         for (j = MAX(jlo,i); j <= jhi; j++) {
@@ -1546,8 +1546,8 @@ void PairEM2::read_parameters()
       k0_val = atof(arg[3]);
       sigma_val = atof(arg[4]);
 
-      force->bounds(arg[0],atom->ntypes,ilo,ihi);
-      force->bounds(arg[1],atom->ntypes,jlo,jhi);
+      force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
       for (i = ilo; i <= ihi; i++) {
         for (j = MAX(jlo,i); j <= jhi; j++) {
@@ -1564,8 +1564,8 @@ void PairEM2::read_parameters()
       epsilon_val = atof(arg[2]);
       sigma_val = atof(arg[3]);
 
-      force->bounds(arg[0],atom->ntypes,ilo,ihi);
-      force->bounds(arg[1],atom->ntypes,jlo,jhi);
+      force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
       for (i = ilo; i <= ihi; i++) {
         for (j = MAX(jlo,i); j <= jhi; j++) {
@@ -1587,8 +1587,8 @@ void PairEM2::read_parameters()
         epsilon_val = atof(arg[2]);
         sigma_val = atof(arg[3]);
 
-        force->bounds(arg[0],atom->ntypes,ilo,ihi);
-        force->bounds(arg[1],atom->ntypes,jlo,jhi);
+        force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+        force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
         for (i = ilo; i <= ihi; i++) {
           for (j = MAX(jlo,i); j <= jhi; j++) {
@@ -1605,8 +1605,8 @@ void PairEM2::read_parameters()
       epsilon_val = atof(arg[2]);
       sigma_val = atof(arg[3]);
 
-      force->bounds(arg[0],atom->ntypes,ilo,ihi);
-      force->bounds(arg[1],atom->ntypes,jlo,jhi);
+      force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
       for (i = ilo; i <= ihi; i++) {
         for (j = MAX(jlo,i); j <= jhi; j++) {
@@ -1623,8 +1623,8 @@ void PairEM2::read_parameters()
       sigma_val = atof(arg[3]);
       r0_val = atof(arg[4]);
 
-      force->bounds(arg[0],atom->ntypes,ilo,ihi);
-      force->bounds(arg[1],atom->ntypes,jlo,jhi);
+      force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
       for (i = ilo; i <= ihi; i++) {
         for (j = MAX(jlo,i); j <= jhi; j++) {
@@ -1643,8 +1643,8 @@ void PairEM2::read_parameters()
       sigma_val = atof(arg[4]);
       geps_val = atof(arg[5]);
 
-      force->bounds(arg[0],atom->ntypes,ilo,ihi);
-      force->bounds(arg[1],atom->ntypes,jlo,jhi);
+      force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
       for (i = ilo; i <= ihi; i++) {
         for (j = MAX(jlo,i); j <= jhi; j++) {
@@ -1660,8 +1660,8 @@ void PairEM2::read_parameters()
       if (me==0) print_log("Lipid Bending Rigidity Factor flag on\n");
       epsilon_val = atof(arg[2]);
 
-      force->bounds(arg[0],atom->ntypes,ilo,ihi);
-      force->bounds(arg[1],atom->ntypes,jlo,jhi);
+      force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
       for (i = ilo; i <= ihi; i++) {
         for (j = MAX(jlo,i); j <= jhi; j++) {
@@ -1676,8 +1676,8 @@ void PairEM2::read_parameters()
       epsilon_val = atof(arg[2]);
       aolig_val = atoi(arg[3]);
 
-      force->bounds(arg[0],atom->ntypes,ilo,ihi);
-      force->bounds(arg[1],atom->ntypes,jlo,jhi);
+      force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(FLERR,arg[1],atom->ntypes,jlo,jhi);
 
       for (i = ilo; i <= ihi; i++) {
         for (j = MAX(jlo,i); j <= jhi; j++) {
@@ -1694,7 +1694,7 @@ void PairEM2::read_parameters()
       lambda_k_val = atof(arg[2]);
       geps_val = atof(arg[3]);
 
-      force->bounds(arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
 
       for (i = ilo; i <= ihi; i++) {
         ic_pot_flag[i] = 1;
@@ -1709,7 +1709,7 @@ void PairEM2::read_parameters()
       epsilon_val = atof(arg[1]);
       zeta0_val = atof(arg[2]);
 
-      force->bounds(arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
 
       for (i = ilo; i <= ihi; i++) {
         cc_pot_flag[i] = 1;
@@ -1723,7 +1723,7 @@ void PairEM2::read_parameters()
       epsilon_val = atof(arg[1]);
       epsilon2_val = atof(arg[2]);
 
-      force->bounds(arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
 
       for (i = ilo; i <= ihi; i++) {
         if (mem_comp_pot_flag[i]==1) error->all(FLERR,"Pair_style EM2: Repeated definition of parameters for a type (Membrane Composition Pot)");
@@ -1756,7 +1756,7 @@ void PairEM2::read_parameters()
       }
       if (npol<=0) error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Membrane Composition Poly Pot)");
 
-      force->bounds(arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
 
       for (i = ilo; i <= ihi; i++) {
         if (mem_comp_pot_flag[i]==1) error->all(FLERR,"Pair_style EM2: Repeated definition of parameters for a type (Membrane Composition Poly Pot)");
@@ -1780,7 +1780,7 @@ void PairEM2::read_parameters()
       epsilon_val = atof(arg[1]);
       epsilon2_val = atof(arg[2]);
 
-      force->bounds(arg[0],atom->ntypes,ilo,ihi);
+      force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
 
       for (i = ilo; i <= ihi; i++) {
         prot_comp_pot_flag[i] = 1;
@@ -1819,7 +1819,7 @@ void PairEM2::read_parameters()
         if ((flag1!=0 && flag1!=1) || (flag2!=0 && flag2!=1))
           error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Composition Stat)");
 
-        force->bounds(arg[0],atom->ntypes,ilo,ihi);
+        force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
 
         for (i = ilo; i <= ihi; i++) {
           mem_stat_flag[i] = flag1;
@@ -1841,7 +1841,7 @@ void PairEM2::read_parameters()
         if (flag1!=0 && flag1!=1)
           error->all(FLERR,"Pair_style EM2: Wrong format in coefficient file (Protein Coverage)");
 
-        force->bounds(arg[0],atom->ntypes,ilo,ihi);
+        force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
 
         for (i = ilo; i <= ihi; i++) {
           pcov_pot_flag[i] = flag1;

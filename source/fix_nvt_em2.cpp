@@ -50,7 +50,7 @@ FixNVTEM2::FixNVTEM2(LAMMPS *lmp, int narg, char **arg) :
 
   modify->add_compute(4,newarg);
   delete [] newarg;
-  tflag = 1;
+  tcomputeflag = 1;
 }
 
 /* ---------------------------------------------------------------------- */

@@ -52,7 +52,7 @@ FixNVTEM2ROT::FixNVTEM2ROT(LAMMPS *lmp, int narg, char **arg) :
 
   modify->add_compute(6,newarg);
   delete [] newarg;
-  tflag = 1;
+  tcomputeflag = 1;
 }
 
 /* ---------------------------------------------------------------------- */
