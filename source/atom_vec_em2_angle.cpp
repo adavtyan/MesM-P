@@ -16,7 +16,7 @@
 ------------------------------------------------------------------------- */
 
 #include "stdlib.h"
-#include "atom_vec_em2.h"
+#include "atom_vec_em2_angle.h"
 #include "math_extra.h"
 #include "atom.h"
 #include "comm.h"
@@ -33,9 +33,10 @@ using namespace MathConst;
 
 /* ---------------------------------------------------------------------- */
 
-AtomVecEM2::AtomVecEM2(LAMMPS *lmp) : AtomVec(lmp)
+AtomVecEM2Angle::AtomVecEM2Angle(LAMMPS *lmp) : AtomVec(lmp)
 {
-  molecular = 0;
+  molecular = 1;
+  bonds_allow = angles_allow = 1;
   forceclearflag = 1;
 
   comm_x_only = comm_f_only = 0;
@@ -49,6 +50,7 @@ AtomVecEM2::AtomVecEM2(LAMMPS *lmp) : AtomVec(lmp)
 
 //  size_data_bonus = 10; 
 
+  atom->molecule_flag = 1;
   atom->angmom_flag = atom->torque_flag = 1;
   mass_type = 1;
 
@@ -58,7 +60,7 @@ AtomVecEM2::AtomVecEM2(LAMMPS *lmp) : AtomVec(lmp)
 
 /* ---------------------------------------------------------------------- */
 
-AtomVecEM2::~AtomVecEM2()
+AtomVecEM2Angle::~AtomVecEM2Angle()
 {
   memory->sfree(bonus);
   memory->destroy(phi);
@@ -72,7 +74,7 @@ AtomVecEM2::~AtomVecEM2()
    n > 0 allocates arrays to size n
 ------------------------------------------------------------------------- */
 
-void AtomVecEM2::grow(int n)
+void AtomVecEM2Angle::grow(int n)
 {
   if (n == 0) grow_nmax();
   else nmax = n;
@@ -88,9 +90,29 @@ void AtomVecEM2::grow(int n)
   v = memory->grow(atom->v,nmax,3,"atom:v");
   f = memory->grow(atom->f,nmax*comm->nthreads,3,"atom:f");
 
+  molecule = memory->grow(atom->molecule,nmax,"atom:molecule");
+
+  nspecial = memory->grow(atom->nspecial,nmax,3,"atom:nspecial");
+  special = memory->grow(atom->special,nmax,atom->maxspecial,"atom:special");
+
+  num_bond = memory->grow(atom->num_bond,nmax,"atom:num_bond");
+  bond_type = memory->grow(atom->bond_type,nmax,atom->bond_per_atom,
+                           "atom:bond_type");
+  bond_atom = memory->grow(atom->bond_atom,nmax,atom->bond_per_atom,
+                           "atom:bond_atom");
+
+  num_angle = memory->grow(atom->num_angle,nmax,"atom:num_angle");
+  angle_type = memory->grow(atom->angle_type,nmax,atom->angle_per_atom,
+                            "atom:angle_type");
+  angle_atom1 = memory->grow(atom->angle_atom1,nmax,atom->angle_per_atom,
+                             "atom:angle_atom1");
+  angle_atom2 = memory->grow(atom->angle_atom2,nmax,atom->angle_per_atom,
+                             "atom:angle_atom2");
+  angle_atom3 = memory->grow(atom->angle_atom3,nmax,atom->angle_per_atom,
+                             "atom:angle_atom3");
+
   angmom = memory->grow(atom->angmom,nmax,3,"atom:angmom");
   torque = memory->grow(atom->torque,nmax*comm->nthreads,3,"atom:torque");
-
 
   phi = memory->grow(phi,nmax,2,"atom:phi");
   phi_half = memory->grow(phi_half,nmax,2,"atom:phi_half");
@@ -108,19 +130,28 @@ void AtomVecEM2::grow(int n)
    reset local array ptrs
 ------------------------------------------------------------------------- */
 
-void AtomVecEM2::grow_reset()
+void AtomVecEM2Angle::grow_reset()
 {
   tag = atom->tag; type = atom->type;
   mask = atom->mask; image = atom->image;
   x = atom->x; v = atom->v; f = atom->f;
+  molecule = atom->molecule;
+  nspecial = atom->nspecial; special = atom->special;
+  num_bond = atom->num_bond; bond_type = atom->bond_type;
+  bond_atom = atom->bond_atom;
+  num_angle = atom->num_angle; angle_type = atom->angle_type;
+  angle_atom1 = atom->angle_atom1; angle_atom2 = atom->angle_atom2;
+  angle_atom3 = atom->angle_atom3;
 }
 
 /* ----------------------------------------------------------------------
    copy atom I info to atom J
 ------------------------------------------------------------------------- */
 
-void AtomVecEM2::copy(int i, int j, int delflag)
+void AtomVecEM2Angle::copy(int i, int j, int delflag)
 {
+  int k;
+
   tag[j] = tag[i];
   type[j] = type[i];
   mask[j] = mask[i];
@@ -131,6 +162,27 @@ void AtomVecEM2::copy(int i, int j, int delflag)
   v[j][0] = v[i][0];
   v[j][1] = v[i][1];
   v[j][2] = v[i][2];
+
+  molecule[j] = molecule[i];
+
+  num_bond[j] = num_bond[i];
+  for (k = 0; k < num_bond[j]; k++) {
+    bond_type[j][k] = bond_type[i][k];
+    bond_atom[j][k] = bond_atom[i][k];
+  }
+
+  num_angle[j] = num_angle[i];
+  for (k = 0; k < num_angle[j]; k++) {
+    angle_type[j][k] = angle_type[i][k];
+    angle_atom1[j][k] = angle_atom1[i][k];
+    angle_atom2[j][k] = angle_atom2[i][k];
+    angle_atom3[j][k] = angle_atom3[i][k];
+  }
+
+  nspecial[j][0] = nspecial[i][0];
+  nspecial[j][1] = nspecial[i][1];
+  nspecial[j][2] = nspecial[i][2];
+  for (k = 0; k < nspecial[j][2]; k++) special[j][k] = special[i][k];
 
   angmom[j][0] = angmom[i][0];
   angmom[j][1] = angmom[i][1];
@@ -157,14 +209,14 @@ void AtomVecEM2::copy(int i, int j, int delflag)
    also reset ellipsoid that points to I to now point to J
 ------------------------------------------------------------------------- */
 
-void AtomVecEM2::copy_bonus(int i, int j)
+void AtomVecEM2Angle::copy_bonus(int i, int j)
 {
   memcpy(&bonus[j],&bonus[i],sizeof(Bonus));
 }
 
 /* ---------------------------------------------------------------------- */
 
-int AtomVecEM2::pack_comm(int n, int *list, double *buf,
+int AtomVecEM2Angle::pack_comm(int n, int *list, double *buf,
                                 int pbc_flag, int *pbc)
 {
   int i,j,m;
@@ -219,7 +271,7 @@ int AtomVecEM2::pack_comm(int n, int *list, double *buf,
 
 /* ---------------------------------------------------------------------- */
 
-int AtomVecEM2::pack_comm_vel(int n, int *list, double *buf,
+int AtomVecEM2Angle::pack_comm_vel(int n, int *list, double *buf,
                                     int pbc_flag, int *pbc)
 {
   int i,j,m;
@@ -319,7 +371,7 @@ int AtomVecEM2::pack_comm_vel(int n, int *list, double *buf,
 
 /* ---------------------------------------------------------------------- */
 
-int AtomVecEM2::pack_comm_hybrid(int n, int *list, double *buf)
+int AtomVecEM2Angle::pack_comm_hybrid(int n, int *list, double *buf)
 {
   int i,j,m;
   double *quat;
@@ -342,7 +394,7 @@ int AtomVecEM2::pack_comm_hybrid(int n, int *list, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-void AtomVecEM2::unpack_comm(int n, int first, double *buf)
+void AtomVecEM2Angle::unpack_comm(int n, int first, double *buf)
 {
   int i,m,last;
   double *quat;
@@ -367,7 +419,7 @@ void AtomVecEM2::unpack_comm(int n, int first, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-void AtomVecEM2::unpack_comm_vel(int n, int first, double *buf)
+void AtomVecEM2Angle::unpack_comm_vel(int n, int first, double *buf)
 {
   int i,m,last;
   double *quat;
@@ -398,7 +450,7 @@ void AtomVecEM2::unpack_comm_vel(int n, int first, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-int AtomVecEM2::unpack_comm_hybrid(int n, int first, double *buf)
+int AtomVecEM2Angle::unpack_comm_hybrid(int n, int first, double *buf)
 {
   int i,m,last;
   double *quat;
@@ -421,7 +473,7 @@ int AtomVecEM2::unpack_comm_hybrid(int n, int first, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-int AtomVecEM2::pack_reverse(int n, int first, double *buf)
+int AtomVecEM2Angle::pack_reverse(int n, int first, double *buf)
 {
   int i,m,last;
 
@@ -442,7 +494,7 @@ int AtomVecEM2::pack_reverse(int n, int first, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-int AtomVecEM2::pack_reverse_hybrid(int n, int first, double *buf)
+int AtomVecEM2Angle::pack_reverse_hybrid(int n, int first, double *buf)
 {
   int i,m,last;
 
@@ -460,7 +512,7 @@ int AtomVecEM2::pack_reverse_hybrid(int n, int first, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-void AtomVecEM2::unpack_reverse(int n, int *list, double *buf)
+void AtomVecEM2Angle::unpack_reverse(int n, int *list, double *buf)
 {
   int i,j,m;
 
@@ -480,7 +532,7 @@ void AtomVecEM2::unpack_reverse(int n, int *list, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-int AtomVecEM2::unpack_reverse_hybrid(int n, int *list, double *buf)
+int AtomVecEM2Angle::unpack_reverse_hybrid(int n, int *list, double *buf)
 {
   int i,j,m;
 
@@ -498,7 +550,7 @@ int AtomVecEM2::unpack_reverse_hybrid(int n, int *list, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-int AtomVecEM2::pack_border(int n, int *list, double *buf,
+int AtomVecEM2Angle::pack_border(int n, int *list, double *buf,
                                   int pbc_flag, int *pbc)
 {
   int i,j,m;
@@ -515,6 +567,7 @@ int AtomVecEM2::pack_border(int n, int *list, double *buf,
       buf[m++] = ubuf(tag[j]).d;
       buf[m++] = ubuf(type[j]).d;
       buf[m++] = ubuf(mask[j]).d;
+      buf[m++] = ubuf(molecule[j]).d;
       quat = bonus[j].quat;
       buf[m++] = quat[0];
       buf[m++] = quat[1];
@@ -543,6 +596,7 @@ int AtomVecEM2::pack_border(int n, int *list, double *buf,
       buf[m++] = ubuf(tag[j]).d;
       buf[m++] = ubuf(type[j]).d;
       buf[m++] = ubuf(mask[j]).d;
+      buf[m++] = ubuf(molecule[j]).d;
       quat = bonus[j].quat;
       buf[m++] = quat[0];
       buf[m++] = quat[1];
@@ -564,7 +618,7 @@ int AtomVecEM2::pack_border(int n, int *list, double *buf,
 
 /* ---------------------------------------------------------------------- */
 
-int AtomVecEM2::pack_border_vel(int n, int *list, double *buf,
+int AtomVecEM2Angle::pack_border_vel(int n, int *list, double *buf,
                                       int pbc_flag, int *pbc)
 {
   int i,j,m;
@@ -581,6 +635,7 @@ int AtomVecEM2::pack_border_vel(int n, int *list, double *buf,
       buf[m++] = ubuf(tag[j]).d;
       buf[m++] = ubuf(type[j]).d;
       buf[m++] = ubuf(mask[j]).d;
+      buf[m++] = ubuf(molecule[j]).d;
       quat = bonus[j].quat;
       buf[m++] = quat[0];
       buf[m++] = quat[1];
@@ -616,6 +671,7 @@ int AtomVecEM2::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = ubuf(tag[j]).d;
         buf[m++] = ubuf(type[j]).d;
         buf[m++] = ubuf(mask[j]).d;
+        buf[m++] = ubuf(molecule[j]).d;
         quat = bonus[j].quat;
         buf[m++] = quat[0];
         buf[m++] = quat[1];
@@ -644,6 +700,7 @@ int AtomVecEM2::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = ubuf(tag[j]).d;
         buf[m++] = ubuf(type[j]).d;
         buf[m++] = ubuf(mask[j]).d;
+        buf[m++] = ubuf(molecule[j]).d;
         quat = bonus[j].quat;
         buf[m++] = quat[0];
         buf[m++] = quat[1];
@@ -678,7 +735,7 @@ int AtomVecEM2::pack_border_vel(int n, int *list, double *buf,
 
 /* ---------------------------------------------------------------------- */
 
-int AtomVecEM2::pack_border_hybrid(int n, int *list, double *buf)
+int AtomVecEM2Angle::pack_border_hybrid(int n, int *list, double *buf)
 {
   int i,j,m;
   double *quat;
@@ -686,6 +743,7 @@ int AtomVecEM2::pack_border_hybrid(int n, int *list, double *buf)
   m = 0;
   for (i = 0; i < n; i++) {
     j = list[i];
+    buf[m++] = ubuf(molecule[j]).d;
     quat = bonus[j].quat;
     buf[m++] = quat[0];
     buf[m++] = quat[1];
@@ -701,7 +759,7 @@ int AtomVecEM2::pack_border_hybrid(int n, int *list, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-void AtomVecEM2::unpack_border(int n, int first, double *buf)
+void AtomVecEM2Angle::unpack_border(int n, int first, double *buf)
 {
   int i,j,m,last;
   double *quat;
@@ -716,6 +774,7 @@ void AtomVecEM2::unpack_border(int n, int first, double *buf)
     tag[i] = (tagint) ubuf(buf[m++]).i;
     type[i] = (int) ubuf(buf[m++]).i;
     mask[i] = (int) ubuf(buf[m++]).i;
+    molecule[i] = (tagint) ubuf(buf[m++]).i;
     quat = bonus[i].quat;
     quat[0] = buf[m++];
     quat[1] = buf[m++];
@@ -735,7 +794,7 @@ void AtomVecEM2::unpack_border(int n, int first, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-void AtomVecEM2::unpack_border_vel(int n, int first, double *buf)
+void AtomVecEM2Angle::unpack_border_vel(int n, int first, double *buf)
 {
   int i,j,m,last;
   double *quat;
@@ -750,6 +809,7 @@ void AtomVecEM2::unpack_border_vel(int n, int first, double *buf)
     tag[i] = (tagint) ubuf(buf[m++]).i;
     type[i] = (int) ubuf(buf[m++]).i;
     mask[i] = (int) ubuf(buf[m++]).i;
+    molecule[i] = (tagint) ubuf(buf[m++]).i;
     quat = bonus[i].quat;
     quat[0] = buf[m++];
     quat[1] = buf[m++];
@@ -775,7 +835,7 @@ void AtomVecEM2::unpack_border_vel(int n, int first, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-int AtomVecEM2::unpack_border_hybrid(int n, int first, double *buf)
+int AtomVecEM2Angle::unpack_border_hybrid(int n, int first, double *buf)
 {
   int i,j,m,last;
   double *quat;
@@ -783,6 +843,7 @@ int AtomVecEM2::unpack_border_hybrid(int n, int first, double *buf)
   m = 0;
   last = first + n;
   for (i = first; i < last; i++) {
+    molecule[i] = (tagint) ubuf(buf[m++]).i;
     quat = bonus[i].quat;
     quat[0] = buf[m++];
     quat[1] = buf[m++];
@@ -801,8 +862,10 @@ int AtomVecEM2::unpack_border_hybrid(int n, int first, double *buf)
    xyz must be 1st 3 values, so comm::exchange() can test on them
 ------------------------------------------------------------------------- */
 
-int AtomVecEM2::pack_exchange(int i, double *buf)
+int AtomVecEM2Angle::pack_exchange(int i, double *buf)
 {
+  int k;
+
   int m = 1;
   buf[m++] = x[i][0];
   buf[m++] = x[i][1];
@@ -829,6 +892,27 @@ int AtomVecEM2::pack_exchange(int i, double *buf)
   buf[m++] = phi_half[i][0];
   buf[m++] = phi_half[i][1];
 
+  buf[m++] = ubuf(molecule[i]).d;
+
+  buf[m++] = ubuf(num_bond[i]).d;
+  for (k = 0; k < num_bond[i]; k++) {
+    buf[m++] = ubuf(bond_type[i][k]).d;
+    buf[m++] = ubuf(bond_atom[i][k]).d;
+  }
+
+  buf[m++] = ubuf(num_angle[i]).d;
+  for (k = 0; k < num_angle[i]; k++) {
+    buf[m++] = ubuf(angle_type[i][k]).d;
+    buf[m++] = ubuf(angle_atom1[i][k]).d;
+    buf[m++] = ubuf(angle_atom2[i][k]).d;
+    buf[m++] = ubuf(angle_atom3[i][k]).d;
+  }
+
+  buf[m++] = ubuf(nspecial[i][0]).d;
+  buf[m++] = ubuf(nspecial[i][1]).d;
+  buf[m++] = ubuf(nspecial[i][2]).d;
+  for (k = 0; k < nspecial[i][2]; k++) buf[m++] = ubuf(special[i][k]).d;
+
   if (atom->nextra_grow)
     for (int iextra = 0; iextra < atom->nextra_grow; iextra++)
       m += modify->fix[atom->extra_grow[iextra]]->pack_exchange(i,&buf[m]);
@@ -839,8 +923,10 @@ int AtomVecEM2::pack_exchange(int i, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-int AtomVecEM2::unpack_exchange(double *buf)
+int AtomVecEM2Angle::unpack_exchange(double *buf)
 {
+  int k;
+
   int nlocal = atom->nlocal;
   if (nlocal == nmax) grow(0);
 
@@ -870,6 +956,28 @@ int AtomVecEM2::unpack_exchange(double *buf)
   phi_half[nlocal][0] = buf[m++];
   phi_half[nlocal][1] = buf[m++];
 
+  molecule[nlocal] = (tagint) ubuf(buf[m++]).i;
+
+  num_bond[nlocal] = (int) ubuf(buf[m++]).i;
+  for (k = 0; k < num_bond[nlocal]; k++) {
+    bond_type[nlocal][k] = (int) ubuf(buf[m++]).i;
+    bond_atom[nlocal][k] = (tagint) ubuf(buf[m++]).i;
+  }
+
+  num_angle[nlocal] = (int) ubuf(buf[m++]).i;
+  for (k = 0; k < num_angle[nlocal]; k++) {
+    angle_type[nlocal][k] = (int) ubuf(buf[m++]).i;
+    angle_atom1[nlocal][k] = (tagint) ubuf(buf[m++]).i;
+    angle_atom2[nlocal][k] = (tagint) ubuf(buf[m++]).i;
+    angle_atom3[nlocal][k] = (tagint) ubuf(buf[m++]).i;
+  }
+
+  nspecial[nlocal][0] = (int) ubuf(buf[m++]).i;
+  nspecial[nlocal][1] = (int) ubuf(buf[m++]).i;
+  nspecial[nlocal][2] = (int) ubuf(buf[m++]).i;
+  for (k = 0; k < nspecial[nlocal][2]; k++)
+    special[nlocal][k] = (tagint) ubuf(buf[m++]).i;
+
   if (atom->nextra_grow)
     for (int iextra = 0; iextra < atom->nextra_grow; iextra++)
       m += modify->fix[atom->extra_grow[iextra]]->
@@ -884,14 +992,14 @@ int AtomVecEM2::unpack_exchange(double *buf)
    include extra data stored by fixes
 ------------------------------------------------------------------------- */
 
-int AtomVecEM2::size_restart()
+int AtomVecEM2Angle::size_restart()
 {
   int i;
 
   int n = 0;
   int nlocal = atom->nlocal;
   for (i = 0; i < nlocal; i++)
-    n += 22;
+    n += 25 + 2*num_bond[i] + 4*num_angle[i];
 
   if (atom->nextra_restart)
     for (int iextra = 0; iextra < atom->nextra_restart; iextra++)
@@ -907,8 +1015,10 @@ int AtomVecEM2::size_restart()
    molecular types may be negative, but write as positive
 ------------------------------------------------------------------------- */
 
-int AtomVecEM2::pack_restart(int i, double *buf)
+int AtomVecEM2Angle::pack_restart(int i, double *buf)
 {
+  int k;
+
   int m = 1;
   buf[m++] = x[i][0];
   buf[m++] = x[i][1];
@@ -934,6 +1044,22 @@ int AtomVecEM2::pack_restart(int i, double *buf)
   buf[m++] = phi_half[i][0];
   buf[m++] = phi_half[i][1];
 
+  buf[m++] = ubuf(molecule[i]).d;
+
+  buf[m++] = ubuf(num_bond[i]).d;
+  for (k = 0; k < num_bond[i]; k++) {
+    buf[m++] = ubuf(MAX(bond_type[i][k],-bond_type[i][k])).d;
+    buf[m++] = ubuf(bond_atom[i][k]).d;
+  }
+
+  buf[m++] = ubuf(num_angle[i]).d;
+  for (k = 0; k < num_angle[i]; k++) {
+    buf[m++] = ubuf(MAX(angle_type[i][k],-angle_type[i][k])).d;
+    buf[m++] = ubuf(angle_atom1[i][k]).d;
+    buf[m++] = ubuf(angle_atom2[i][k]).d;
+    buf[m++] = ubuf(angle_atom3[i][k]).d;
+  }
+
   if (atom->nextra_restart)
     for (int iextra = 0; iextra < atom->nextra_restart; iextra++)
       m += modify->fix[atom->extra_restart[iextra]]->pack_restart(i,&buf[m]);
@@ -946,8 +1072,10 @@ int AtomVecEM2::pack_restart(int i, double *buf)
    unpack data for one atom from restart file including bonus data
 ------------------------------------------------------------------------- */
 
-int AtomVecEM2::unpack_restart(double *buf)
+int AtomVecEM2Angle::unpack_restart(double *buf)
 {
+  int k;
+
   int nlocal = atom->nlocal;
   if (nlocal == nmax) {
     grow(0);
@@ -981,6 +1109,24 @@ int AtomVecEM2::unpack_restart(double *buf)
   phi_half[nlocal][0] = buf[m++];
   phi_half[nlocal][1] = buf[m++];
 
+  molecule[nlocal] = (tagint) ubuf(buf[m++]).i;
+
+  num_bond[nlocal] = (int) ubuf(buf[m++]).i;
+  for (k = 0; k < num_bond[nlocal]; k++) {
+    bond_type[nlocal][k] = (int) ubuf(buf[m++]).i;
+    bond_atom[nlocal][k] = (tagint) ubuf(buf[m++]).i;
+  }
+
+  num_angle[nlocal] = (int) ubuf(buf[m++]).i;
+  for (k = 0; k < num_angle[nlocal]; k++) {
+    angle_type[nlocal][k] = (int) ubuf(buf[m++]).i;
+    angle_atom1[nlocal][k] = (tagint) ubuf(buf[m++]).i;
+    angle_atom2[nlocal][k] = (tagint) ubuf(buf[m++]).i;
+    angle_atom3[nlocal][k] = (tagint) ubuf(buf[m++]).i;
+  }
+
+  nspecial[nlocal][0] = nspecial[nlocal][1] = nspecial[nlocal][2] = 0;
+
   double **extra = atom->extra;
   if (atom->nextra_store) {
     int size = static_cast<int> (buf[0]) - m;
@@ -996,7 +1142,7 @@ int AtomVecEM2::unpack_restart(double *buf)
    set other values to defaults
 ------------------------------------------------------------------------- */
 
-void AtomVecEM2::create_atom(int itype, double *coord)
+void AtomVecEM2Angle::create_atom(int itype, double *coord)
 {
   int nlocal = atom->nlocal;
   if (nlocal == nmax) grow(0);
@@ -1029,6 +1175,11 @@ void AtomVecEM2::create_atom(int itype, double *coord)
   dphi[nlocal][0] = 0.0;
   dphi[nlocal][1] = 0.0;
 
+  molecule[nlocal] = 0;
+  num_bond[nlocal] = 0;
+  num_angle[nlocal] = 0;
+  nspecial[nlocal][0] = nspecial[nlocal][1] = nspecial[nlocal][2] = 0;
+
   atom->nlocal++;
 }
 
@@ -1037,24 +1188,25 @@ void AtomVecEM2::create_atom(int itype, double *coord)
    initialize other atom quantities
 ------------------------------------------------------------------------- */
 
-void AtomVecEM2::data_atom(double *coord, imageint imagetmp, 
+void AtomVecEM2Angle::data_atom(double *coord, imageint imagetmp, 
                                  char **values)
 {
   int nlocal = atom->nlocal;
   if (nlocal == nmax) grow(0);
 
   tag[nlocal] = ATOTAGINT(values[0]);
-  type[nlocal] = atoi(values[1]);
+  molecule[nlocal] = ATOTAGINT(values[1]);
+  type[nlocal] = atoi(values[2]);
   if (type[nlocal] <= 0 || type[nlocal] > atom->ntypes)
     error->one(FLERR,"Invalid atom type in Atoms section of data file");
 
   double *quat = bonus[nlocal].quat;
-  quat[0] = atof(values[2]);
-  quat[1] = atof(values[3]);
-  quat[2] = atof(values[4]);
-  quat[3] = atof(values[5]);
-  phi[nlocal][0] = atof(values[6]);
-  phi[nlocal][1] = atof(values[7]);
+  quat[0] = atof(values[3]);
+  quat[1] = atof(values[4]);
+  quat[2] = atof(values[5]);
+  quat[3] = atof(values[6]);
+  phi[nlocal][0] = atof(values[7]);
+  phi[nlocal][1] = atof(values[8]);
 
   x[nlocal][0] = coord[0];
   x[nlocal][1] = coord[1];
@@ -1075,6 +1227,9 @@ void AtomVecEM2::data_atom(double *coord, imageint imagetmp,
   dphi[nlocal][0] = 0.0;
   dphi[nlocal][1] = 0.0;
 
+  num_bond[nlocal] = 0;
+  num_angle[nlocal] = 0;
+
   atom->nlocal++;
 }
 
@@ -1083,24 +1238,29 @@ void AtomVecEM2::data_atom(double *coord, imageint imagetmp,
    initialize other atom quantities for this sub-style
 ------------------------------------------------------------------------- */
 
-int AtomVecEM2::data_atom_hybrid(int nlocal, char **values)
+int AtomVecEM2Angle::data_atom_hybrid(int nlocal, char **values)
 {
-  double *quat = bonus[nlocal].quat;
-  quat[0] = atof(values[0]);
-  quat[1] = atof(values[1]);
-  quat[2] = atof(values[2]);
-  quat[3] = atof(values[3]);
-  phi[nlocal][0] = atof(values[4]);
-  phi[nlocal][1] = atof(values[5]);
+  molecule[nlocal] = ATOTAGINT(values[0]);
 
-  return 6;
+  double *quat = bonus[nlocal].quat;
+  quat[0] = atof(values[1]);
+  quat[1] = atof(values[2]);
+  quat[2] = atof(values[3]);
+  quat[3] = atof(values[4]);
+  phi[nlocal][0] = atof(values[5]);
+  phi[nlocal][1] = atof(values[6]);
+
+  num_bond[nlocal] = 0;
+  num_angle[nlocal] = 0;
+
+  return 7;
 }
 
 /* ----------------------------------------------------------------------
    unpack one line from Velocities section of data file
 ------------------------------------------------------------------------- */
 
-void AtomVecEM2::data_vel(int m, char **values)
+void AtomVecEM2Angle::data_vel(int m, char **values)
 {
   v[m][0] = atof(values[0]);
   v[m][1] = atof(values[1]);
@@ -1114,7 +1274,7 @@ void AtomVecEM2::data_vel(int m, char **values)
    unpack hybrid quantities from one line in Velocities section of data file
 ------------------------------------------------------------------------- */
 
-int AtomVecEM2::data_vel_hybrid(int m, char **values)
+int AtomVecEM2Angle::data_vel_hybrid(int m, char **values)
 {
   angmom[m][0] = atof(values[0]);
   angmom[m][1] = atof(values[1]);
@@ -1126,7 +1286,7 @@ int AtomVecEM2::data_vel_hybrid(int m, char **values)
    pack atom info for data file including 3 image flags
 ------------------------------------------------------------------------- */
 
-void AtomVecEM2::pack_data(double **buf)
+void AtomVecEM2Angle::pack_data(double **buf)
 {
   double *quat;
 
@@ -1135,6 +1295,7 @@ void AtomVecEM2::pack_data(double **buf)
   for (int i = 0; i < nlocal; i++) {
     m = 0;
     buf[i][m++] = ubuf(tag[i]).d;
+    buf[i][m++] = ubuf(molecule[i]).d;
     buf[i][m++] = ubuf(type[i]).d;
 
     quat = bonus[i].quat;
@@ -1158,11 +1319,12 @@ void AtomVecEM2::pack_data(double **buf)
    pack hybrid atom info for data file
 ------------------------------------------------------------------------- */
 
-int AtomVecEM2::pack_data_hybrid(int i, double *buf)
+int AtomVecEM2Angle::pack_data_hybrid(int i, double *buf)
 {
   double *quat = bonus[i].quat;
 
   int m = 0;
+  buf[m++] = ubuf(molecule[i]).d;
   buf[m++] = quat[0];
   buf[m++] = quat[1];
   buf[m++] = quat[2];
@@ -1177,37 +1339,37 @@ int AtomVecEM2::pack_data_hybrid(int i, double *buf)
    write atom info to data file including 3 image flags
 ------------------------------------------------------------------------- */
 
-void AtomVecEM2::write_data(FILE *fp, int n, double **buf)
+void AtomVecEM2Angle::write_data(FILE *fp, int n, double **buf)
 {
   for (int i = 0; i < n; i++)
-    fprintf(fp,TAGINT_FORMAT
+    fprintf(fp,TAGINT_FORMAT " " TAGINT_FORMAT
             " %d %-1.16e %-1.16e %-1.16e %-1.16e "
             "%-1.16e %-1.16e %-1.16e %-1.16e %-1.16e %d %d %d\n",
-            (tagint) ubuf(buf[i][0]).i,(int) ubuf(buf[i][1]).i,
-            buf[i][2],buf[i][3],buf[i][4],buf[i][5],
-            buf[i][6],buf[i][7],
-            buf[i][8],buf[i][9],buf[i][10],
-            (int) ubuf(buf[i][11]).i,(int) ubuf(buf[i][12]).i,
-            (int) ubuf(buf[i][13]).i);
+            (tagint) ubuf(buf[i][0]).i,(tagint) ubuf(buf[i][1]).i,(int) ubuf(buf[i][2]).i,
+            buf[i][3],buf[i][4],buf[i][5],buf[i][6],
+            buf[i][7],buf[i][8],
+            buf[i][9],buf[i][10],buf[i][11],
+            (int) ubuf(buf[i][12]).i,(int) ubuf(buf[i][13]).i,
+            (int) ubuf(buf[i][14]).i);
 }
 
 /* ----------------------------------------------------------------------
    write hybrid atom info to data file
 ------------------------------------------------------------------------- */
 
-int AtomVecEM2::write_data_hybrid(FILE *fp, double *buf)
+int AtomVecEM2Angle::write_data_hybrid(FILE *fp, double *buf)
 {
-  fprintf(fp," %-1.16e %-1.16e %-1.16e %-1.16e %-1.16e %-1.16e",
-          buf[0],buf[1],buf[2],buf[3],buf[4],buf[5]);
+  fprintf(fp," " TAGINT_FORMAT " %-1.16e %-1.16e %-1.16e %-1.16e %-1.16e %-1.16e",
+          (tagint) ubuf(buf[0]).i,buf[1],buf[2],buf[3],buf[4],buf[5],buf[6]);
 
-  return 6;
+  return 7;
 }
 
 /* ----------------------------------------------------------------------
    pack velocity info for data file
 ------------------------------------------------------------------------- */
 
-void AtomVecEM2::pack_vel(double **buf)
+void AtomVecEM2Angle::pack_vel(double **buf)
 {
   int nlocal = atom->nlocal;
   for (int i = 0; i < nlocal; i++) {
@@ -1225,7 +1387,7 @@ void AtomVecEM2::pack_vel(double **buf)
    pack hybrid velocity info for data file
 ------------------------------------------------------------------------- */
 
-int AtomVecEM2::pack_vel_hybrid(int i, double *buf)
+int AtomVecEM2Angle::pack_vel_hybrid(int i, double *buf)
 {
   buf[0] = angmom[i][0];
   buf[1] = angmom[i][1];
@@ -1237,7 +1399,7 @@ int AtomVecEM2::pack_vel_hybrid(int i, double *buf)
    write velocity info to data file
 ------------------------------------------------------------------------- */
 
-void AtomVecEM2::write_vel(FILE *fp, int n, double **buf)
+void AtomVecEM2Angle::write_vel(FILE *fp, int n, double **buf)
 {
   for (int i = 0; i < n; i++)
     fprintf(fp,TAGINT_FORMAT 
@@ -1250,7 +1412,7 @@ void AtomVecEM2::write_vel(FILE *fp, int n, double **buf)
    write hybrid velocity info to data file
 ------------------------------------------------------------------------- */
 
-int AtomVecEM2::write_vel_hybrid(FILE *fp, double *buf)
+int AtomVecEM2Angle::write_vel_hybrid(FILE *fp, double *buf)
 {
   fprintf(fp," %-1.16e %-1.16e %-1.16e",buf[0],buf[1],buf[2]);
   return 3;
@@ -1258,7 +1420,7 @@ int AtomVecEM2::write_vel_hybrid(FILE *fp, double *buf)
 
 /* ---------------------------------------------------------------------- */
 
-void AtomVecEM2::force_clear(int n, size_t nbytes)
+void AtomVecEM2Angle::force_clear(int n, size_t nbytes)
 {
 //  memset(&dphi[n][0],0,nbytes);
 //  memset(&dphi[n][1],0,nbytes);
@@ -1270,7 +1432,7 @@ void AtomVecEM2::force_clear(int n, size_t nbytes)
    return -1 if name is unknown to this atom style
 ------------------------------------------------------------------------- */
 
-int AtomVecEM2::property_atom(char *name)
+int AtomVecEM2Angle::property_atom(char *name)
 {
   if (strcmp(name,"phim") == 0) return 0;
   if (strcmp(name,"phib") == 0) return 1;
@@ -1284,7 +1446,7 @@ int AtomVecEM2::property_atom(char *name)
    index maps to data specific to this atom style
 ------------------------------------------------------------------------- */
 
-void AtomVecEM2::pack_property_atom(int index, double *buf,
+void AtomVecEM2Angle::pack_property_atom(int index, double *buf,
                                      int nvalues, int groupbit)
 {
   int *mask = atom->mask;
@@ -1322,7 +1484,7 @@ void AtomVecEM2::pack_property_atom(int index, double *buf,
    return # of bytes of allocated memory
 ------------------------------------------------------------------------- */
 
-bigint AtomVecEM2::memory_usage()
+bigint AtomVecEM2Angle::memory_usage()
 {
   bigint bytes = 0;
 
@@ -1341,6 +1503,27 @@ bigint AtomVecEM2::memory_usage()
   if (atom->memcheck("phi")) bytes += memory->usage(phi,nmax,2);
   if (atom->memcheck("phi_half")) bytes += memory->usage(phi_half,nmax,2);
   if (atom->memcheck("dphi")) bytes += memory->usage(dphi,nmax*comm->nthreads,2);
+
+  if (atom->memcheck("molecule")) bytes += memory->usage(molecule,nmax);
+  if (atom->memcheck("nspecial")) bytes += memory->usage(nspecial,nmax,3);
+  if (atom->memcheck("special"))
+    bytes += memory->usage(special,nmax,atom->maxspecial);
+
+  if (atom->memcheck("num_bond")) bytes += memory->usage(num_bond,nmax);
+  if (atom->memcheck("bond_type"))
+    bytes += memory->usage(bond_type,nmax,atom->bond_per_atom);
+  if (atom->memcheck("bond_atom"))
+    bytes += memory->usage(bond_atom,nmax,atom->bond_per_atom);
+
+  if (atom->memcheck("num_angle")) bytes += memory->usage(num_angle,nmax);
+  if (atom->memcheck("angle_type"))
+    bytes += memory->usage(angle_type,nmax,atom->angle_per_atom);
+  if (atom->memcheck("angle_atom1"))
+    bytes += memory->usage(angle_atom1,nmax,atom->angle_per_atom);
+  if (atom->memcheck("angle_atom2"))
+    bytes += memory->usage(angle_atom2,nmax,atom->angle_per_atom);
+  if (atom->memcheck("angle_atom3"))
+    bytes += memory->usage(angle_atom3,nmax,atom->angle_per_atom);
 
   bytes += nmax*sizeof(Bonus);
 
