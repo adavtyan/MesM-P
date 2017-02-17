@@ -79,9 +79,8 @@ void FixNHEM2::allocate()
 void FixNHEM2::init()
 {
   avec = (AtomVecEM2 *) atom->style_match("em2");
-  if (!avec)
-    error->all(FLERR,
-               "Compute nvt/nph/npt em2 requires atom style em2");
+  if (!avec) avec = (AtomVecEM2 *) atom->style_match("em2_angle");
+  if (!avec) error->all(FLERR, "Compute nvt/nph/npt em2 requires atom style em2");
 
   FixNH::init();
 

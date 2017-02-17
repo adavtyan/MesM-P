@@ -79,9 +79,8 @@ void FixNHEM2ROT::allocate()
 void FixNHEM2ROT::init()
 {
   avec = (AtomVecEM2 *) atom->style_match("em2");
-  if (!avec)
-    error->all(FLERR,
-               "Fix nvt/nph/npt em2/rot requires atom style em2");
+  if (!avec) avec = (AtomVecEM2 *) atom->style_match("em2_angle");
+  if (!avec) error->all(FLERR, "Fix nvt/nph/npt em2/rot requires atom style em2");
 
   FixNH::init();
 

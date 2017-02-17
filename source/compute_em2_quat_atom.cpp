@@ -54,6 +54,7 @@ ComputeEM2QuatAtom::~ComputeEM2QuatAtom()
 void ComputeEM2QuatAtom::init()
 {
   avec = (AtomVecEM2 *) atom->style_match("em2");
+  if (!avec) avec = (AtomVecEM2 *) atom->style_match("em2_angle");
   if (!avec) error->all(FLERR,"compute em2_quat/atom command requires atom style em2");
 
   int count = 0;

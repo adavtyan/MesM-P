@@ -54,6 +54,7 @@ ComputeEM2dPhiAtom::~ComputeEM2dPhiAtom()
 void ComputeEM2dPhiAtom::init()
 {
   avec = (AtomVecEM2 *) atom->style_match("em2");
+  if (!avec) avec = (AtomVecEM2 *) atom->style_match("em2_angle");
   if (!avec) error->all(FLERR,"compute em2_dphi/atom command requires atom style em2");
 
   int count = 0;

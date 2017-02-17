@@ -74,8 +74,8 @@ void FixNVEEM2::allocate()
 void FixNVEEM2::init()
 {
   avec = (AtomVecEM2 *) atom->style_match("em2");
-  if (!avec)
-    error->all(FLERR,"Compute nve/em2 requires atom style em2");
+  if (!avec) avec = (AtomVecEM2 *) atom->style_match("em2_angle");
+  if (!avec) error->all(FLERR,"Compute nve/em2 requires atom style em2");
 
   FixNVE::init();
 

@@ -2049,6 +2049,7 @@ void PairEM2::compute_lucy_potential_table()
 void PairEM2::init_style()
 {
   avec = (AtomVecEM2 *) atom->style_match("em2");
+  if (!avec) avec = (AtomVecEM2 *) atom->style_match("em2_angle");
   if (!avec) error->all(FLERR,"Pair em2 requires atom style em2");
 
   neighbor->request(this,instance_me);

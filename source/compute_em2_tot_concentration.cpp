@@ -49,6 +49,7 @@ ComputeTotConc::~ComputeTotConc()
 void ComputeTotConc::init()
 {
   avec = (AtomVecEM2 *) atom->style_match("em2");
+  if (!avec) avec = (AtomVecEM2 *) atom->style_match("em2_angle");
   if (!avec) error->all(FLERR,"compute em2_dphi/atom command requires atom style em2");
 }
 

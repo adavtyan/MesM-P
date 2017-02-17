@@ -95,6 +95,7 @@ void ComputeEM2TU::init()
     error->all(FLERR,"Compute em2_tu cutoff is longer than pairwise cutoff");
 
   avec = (AtomVecEM2 *) atom->style_match("em2");
+  if (!avec) avec = (AtomVecEM2 *) atom->style_match("em2_angle");
   if (!avec) error->all(FLERR,"Compute em2_tu requires atom style em2");
 
   // need an occasional half neighbor list

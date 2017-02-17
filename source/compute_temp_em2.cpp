@@ -118,6 +118,7 @@ void ComputeTempEM2::init()
   // error check
 
   avec = (AtomVecEM2 *) atom->style_match("em2");
+  if (!avec) avec = (AtomVecEM2 *) atom->style_match("em2_angle");
   if (!avec)
     error->all(FLERR,"Compute temp/em2 requires atom style em2");
 

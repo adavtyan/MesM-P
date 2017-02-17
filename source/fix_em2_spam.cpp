@@ -73,8 +73,8 @@ void FixEM2SPAM::allocate()
 void FixEM2SPAM::init()
 {
   avec = (AtomVecEM2 *) atom->style_match("em2");
-  if (!avec)
-    error->all(FLERR,"Compute em2/spam requires atom style em2");
+  if (!avec) avec = (AtomVecEM2 *) atom->style_match("em2_angle");
+  if (!avec) error->all(FLERR,"Compute em2/spam requires atom style em2");
 
   FixNVE::init();
 
