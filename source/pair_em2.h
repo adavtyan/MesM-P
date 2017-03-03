@@ -52,11 +52,13 @@ class PairEM2 : public Pair {
   double norm0[3], nt0[3];
 
   // 2-16 LJ-like potential parameters
-  double **lj216_pot_flag, **lj216_epsilon, **lj216_sigma, **lj216_k0;
+  int **lj216_pot_flag;
+  double **lj216_epsilon, **lj216_sigma, **lj216_k0;
   double **lj1,**lj2,**lj3,**lj4;
 
   // 6-12 LJ-like potential parameters
-  double **lj612_pot_flag, **lj612_epsilon, **lj612_sigma, **lj612_k0;
+  int **lj612_pot_flag;
+  double **lj612_epsilon, **lj612_sigma, **lj612_k0;
   double **lj612_1,**lj612_2,**lj612_3,**lj612_4;
 
   // Lucy potential parameters

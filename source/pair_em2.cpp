@@ -1726,7 +1726,7 @@ void PairEM2::read_parameters()
       force->bounds(FLERR,arg[0],atom->ntypes,ilo,ihi);
 
       for (i = ilo; i <= ihi; i++) {
-        if (mem_comp_pot_flag[i]==1) error->all(FLERR,"Pair_style EM2: Repeated definition of parameters for a type (Membrane Composition Pot)");
+        if (mem_comp_pot_flag[i]==2) error->all(FLERR,"Pair_style EM2: Repeated definition of parameters for a type (Membrane Composition Pot)");
         mem_comp_pot_flag[i] = 1;
         mem_comp_xi_epsilon[i] = epsilon_val;
         mem_comp_epsilon[i] = epsilon2_val;
@@ -1760,7 +1760,7 @@ void PairEM2::read_parameters()
 
       for (i = ilo; i <= ihi; i++) {
         if (mem_comp_pot_flag[i]==1) error->all(FLERR,"Pair_style EM2: Repeated definition of parameters for a type (Membrane Composition Poly Pot)");
-        mem_comp_pot_flag[i] = 1;
+        mem_comp_pot_flag[i] = 2;
         mem_comp_xi_epsilon[i] = epsilon_val;
         mem_comp_epsilon[i] = epsilon2_val;
         mem_comp_npoly[i] = npol;
@@ -2257,6 +2257,7 @@ void PairEM2::write_restart(FILE *fp)
       fwrite(&lipid_factor_flag[i][j],sizeof(int),1,fp);
       fwrite(&olig_pot_flag[i][j],sizeof(int),1,fp);
       fwrite(&cut[i][j],sizeof(double),1,fp);
+
       if (lj216_pot_flag[i][j]) {
         fwrite(&lj216_epsilon[i][j],sizeof(double),1,fp);
         fwrite(&lj216_k0[i][j],sizeof(double),1,fp);
