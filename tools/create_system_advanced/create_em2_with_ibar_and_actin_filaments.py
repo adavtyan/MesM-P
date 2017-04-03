@@ -205,10 +205,15 @@ elif mem_topology==MT_CYLINDER:
       data.atoms.append(Atom(ind, mol, ty, x, y, z))
 
       # Set quaternion
-      qw = 0.5*np.sqrt(1.0 + np.cos(alpha))
-      qx = -qw*np.tan(0.5*alpha)
-      qy = qw
-      qz = -qx
+      if alpha!=np.pi:
+        qw = 0.5*np.sqrt(1.0 + np.cos(alpha))
+        qx = -qw*np.tan(0.5*alpha)
+        qy = qw
+        qz = -qx
+      else:
+        qw = qy = 0.0
+        qx = 1.0/np.sqrt(2.0)
+        qz = -1.0/np.sqrt(2.0)
       data.atoms[-1].quat = [qw, qx, qy, qz]
 
       # Set membrane and protein composition
