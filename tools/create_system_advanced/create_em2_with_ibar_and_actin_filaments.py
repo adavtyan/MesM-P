@@ -9,6 +9,8 @@ from data_stuctures import *
 from add_streight_filaments import *
 from add_solvent_tools import *
 
+SMALL = 0.000001
+
 MT_VESICLE    = 0
 MT_FLAT_SHEET = 1
 MT_CYLINDER   = 2
@@ -205,7 +207,7 @@ elif mem_topology==MT_CYLINDER:
       data.atoms.append(Atom(ind, mol, ty, x, y, z))
 
       # Set quaternion
-      if alpha!=np.pi:
+      if fabs(alpha-np.pi)>SMALL:
         qw = 0.5*np.sqrt(1.0 + np.cos(alpha))
         qx = -qw*np.tan(0.5*alpha)
         qy = qw
