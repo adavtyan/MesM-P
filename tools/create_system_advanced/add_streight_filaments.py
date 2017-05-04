@@ -1,6 +1,6 @@
 import sys
 import random as rnd
-from math import pi, sin, cos, sqrt
+from math import pi, sin, cos, sqrt, ceil, floor
 from data_stuctures import *
 from progressbar import ProgressBar
 
@@ -8,7 +8,9 @@ C_PI = pi
 C_2PI = 2.0*pi
 C_PIH = 0.5*pi
 
-THEAT_MIN_DEFAULT = 0.0
+THETA_SCAFFOLD_DEFAULT = pi/3.0
+
+THEAT_MIN_DEFAULT = -0.5*pi
 THEAT_MAX_DEFAULT = 0.5*pi
 
 ALIGN_NONE = 0
@@ -83,14 +85,216 @@ def extend_xyz_f(xyz, dx, nn, box, L, prd, flag):
 
   return xyz
 
+def add_filament_to_data(c_xyz, fil, data, b_add_2_map=True):
+  data.n_mol += 1
+  for j in range(fil.Nb):
+    data.n_atoms += 1
+    xn = c_xyz[j]
+    ind = data.n_atoms
+    mol = data.n_mol
+    #ty = fil.get_type_index(j) + last_atom_type
+    ty = fil.get_type_index(j) + data.n_atom_types
+    data.atoms.append(Atom(ind, mol, ty, xn[0], xn[1], xn[2], xn[3], xn[4], xn[5]))
+
+    # add the atom to the index map
+    if b_add_2_map: data.add_coord_to_map(ind)
+
+    # add bonds, angles, and dihedrals
+    if fil.b_bonds and j>0:
+      data.n_bonds += 1
+      ib = data.n_bonds
+      ty = data.n_bond_types
+      data.bonds.append(Bond(ib, ty, ind-1, ind))
+
+    if fil.b_angles and j>1:
+      data.n_angles += 1
+      ib = data.n_angles
+      ty = data.n_angle_types
+      data.angles.append(Angle(ib, ty, ind-2, ind-1, ind))
+
+    if fil.b_dihedrals and j>2:
+      data.n_dihedrals += 1
+      ib = data.n_dihedrals
+      ty = data.n_dihedral_types
+      data.dihedrals.append(Dihedral(ib, ty, ind-3, ind-2, ind-1, ind))
+
+
+def gen_helical_scaffold(fil, Nf, data, top_data=[], periodic=True, xyz_max=[], sp_min=0.0):
+  # Variable initiation
+  Nb = fil.Nb
+  R0 = fil.Rb
+  Lp = Nb*R0
+  dmin = fil.dmin
+  #last_atom_type = data.n_atom_types
+  #data.n_atom_types += fil.get_ntypes()
+  if fil.b_bonds: data.n_bond_types += 1
+  if fil.b_angles: data.n_angle_types += 1
+  if fil.b_dihedrals: data.n_dihedral_types += 1
+  if xyz_max==[]: xyz_max = data.box
+
+  # Sanity checks
+  ierror = False
+  if len(top_data)!=3: ierror = True
+  if ierror:
+    print "gen_helical_scaffold() function input error!\n\n"
+    sys.exit()
+
+  # Cylinder axis and radius
+  Xs = top_data[0]
+  Ys = top_data[1]
+  Rs = top_data[2]
+
+  # Pre-computing placement parameters
+  L_tot = (Lp + sp_min)*Nf # Total length required for Nf proteins with sp spacing between them
+  Lz = xyz_max[2][1] - xyz_max[2][0]
+  # Length of the helix cannot be shorter than Lz
+  if L_tot<=Lz: L_tot = Lz + Lp
+  # If the system is periodic, the helix must close on itself accros Z boundary
+  if periodic:
+    n_turns = ceil(sqrt(L_tot**2 - Lz**2)/(C_2PI*Rs))
+    L_tot = sqrt(Lz**2 + (C_2PI*Rs*n_turns)**2)
+  # Find the parametric step size dt and vertical step zc
+  LL = sqrt(L_tot**2 - Lz**2)
+  dt = LL/(Rs*float(Nf))
+  zc = Lz*Rs/LL
+  # Pre-compute constant portions of dx
+  # dx = dx0.{sin(t), cos(t), 1}
+  dx0 = [-R0*LL/L_tot, R0*LL/L_tot, Lz/L_tot]
+
+  fr=Nf/100
+  if fr<=0: fr=1
+  prb = ProgressBar('green', width=50, block='*', empty='o')
+  # Generate Nf filaments
+  for i in range(Nf):
+    # Find a position on the surface of the cylinder
+    # This will be used as a midpoint of the filament
+    ti = dt*i
+    xm = Xs + Rs*cos(ti)
+    ym = Ys + Rs*sin(ti)
+    zm = xyz_max[2][0] + zc*ti
+
+    # Find displacment and starting position
+    dx = [dx0[0]*sin(ti), dx0[1]*cos(ti), dx0[2]]
+    x0 = xm - 0.5*Nb*dx[0]
+    y0 = ym - 0.5*Nb*dx[1]
+    z0 = zm - 0.5*Nb*dx[2]
+
+    # Generate filament bead coordinates
+    c_xyz = []
+    xyz = [x0, y0, z0]
+    nn = [0, 0, 0]
+    for j in range(Nb):
+      extend_xyz_f(xyz, dx, nn, data.box, data.L, [False, False, periodic], [1, 1, 1])
+      c_xyz.append([xyz[0], xyz[1], xyz[2], nn[0], nn[1], nn[2]])
+
+    # adding the filament to the data
+    add_filament_to_data(c_xyz, fil, data)
+
+    if (i+1)%fr==0:
+      p = round(100.0*float(i+1)/Nf,2)
+      prb.render(int(p), 'Adding streight filaments in helical scaffold!')
+
+  # Incrementing atom types
+  data.n_atom_types += fil.get_ntypes()
+
+  p = round(100.0,2)
+  prb.render(int(p), 'Adding streight filaments in helical scaffold!')
+  print "%f filaments were added" % Nf
+
+
+def gen_circular_scaffold(fil, Nf, data, top_data=[], periodic=True, xyz_max=[], sp_min=0.0, theta=THETA_SCAFFOLD_DEFAULT, complete_turn=False):
+  # Variable initiation
+  Nb = fil.Nb
+  R0 = fil.Rb
+  Lp = Nb*R0
+  dmin = fil.dmin
+  #last_atom_type = data.n_atom_types
+  #data.n_atom_types += fil.get_ntypes()
+  if fil.b_bonds: data.n_bond_types += 1
+  if fil.b_angles: data.n_angle_types += 1
+  if fil.b_dihedrals: data.n_dihedral_types += 1
+  if xyz_max==[]: xyz_max = data.box
+
+  # Sanity checks
+  ierror = False
+  if len(top_data)!=3: ierror = True
+  if theta==0.0: ierror = True
+  if ierror:
+    print "gen_circular_scaffold() function input error!\n\n"
+    sys.exit()
+
+  # Cylinder axis and radius
+  Xs = top_data[0]
+  Ys = top_data[1]
+  Rs = top_data[2]
+
+  # Pre-compute sin(theta), cos(theta) and placement parameters
+  stheta = sin(theta)
+  ctheta = cos(theta)
+  Rc = Rs/stheta # The longest radius of theta cross-section
+  P = C_PI*(3.0*(Rc + Rs) - sqrt((3.0*Rc + Rs)*(Rc + 3.0*Rs))) # Approximate perimeter of the cross-section 
+  np = floor(C_2PI*Rc/(Lp + sp_min)) # Number of proteins that fit in one turn
+  nt = ceil(float(Nf)/float(np)) # Number of turn required to fit all proteins
+  dpsi = C_2PI/np # Angular spacing
+  Lz = xyz_max[2][1] - xyz_max[2][0]
+  zt = Lz/float(nt) # Spacing between turns
+
+  if complete_turn: Nf = int(np)*int(nt)
+
+  fr=Nf/100
+  if fr<=0: fr=1
+  prb = ProgressBar('green', width=50, block='*', empty='o')
+  # Generate Nf filaments
+  for i in range(Nf):
+    # Find a position on the surface of the cylinder
+    # This will be used as a midpoint of the filament
+    iturn = floor(i/np)
+    iprot = i%np
+    psi = dpsi*iprot
+    xm = Xs + Rs*cos(psi)
+    ym = Ys + Rs*sin(psi)
+    zm = xyz_max[2][0] + zt*iturn - Rc*ctheta*cos(psi)
+
+    # Find displacment and starting position
+    z_num = ctheta*sin(psi)/stheta
+    norm = 1.0/sqrt(1.0 + z_num**2)
+    dx = [-R0*norm*sin(psi), R0*norm*cos(psi), R0*norm*z_num]
+    #dx = [R0*stheta*sin(psi), -R0*stheta*cos(psi), R0*ctheta]
+    x0 = xm - 0.5*Nb*dx[0]
+    y0 = ym - 0.5*Nb*dx[1]
+    z0 = zm - 0.5*Nb*dx[2]
+
+    # Generate filament bead coordinates
+    c_xyz = []
+    xyz = [x0, y0, z0]
+    nn = [0, 0, 0]
+    for j in range(Nb):
+      extend_xyz_f(xyz, dx, nn, data.box, data.L, [False, False, periodic], [1, 1, 1])
+      c_xyz.append([xyz[0], xyz[1], xyz[2], nn[0], nn[1], nn[2]])
+
+    # adding the filament to the data
+    add_filament_to_data(c_xyz, fil, data)
+
+    if (i+1)%fr==0:
+      p = round(100.0*float(i+1)/Nf,2)
+      prb.render(int(p), 'Adding streight filaments in circular scaffold!')
+
+  # Incrementing atom types
+  data.n_atom_types += fil.get_ntypes()
+
+  p = round(100.0,2)
+  prb.render(int(p), 'Adding streight filaments in circular scaffold!')
+  print "%f filaments were added" % Nf
+
+
 def gen_straight_filaments(fil, Nf, data, xyz_max=[], periodic=[], twoD=TWOD_FLAG_NONE, align=ALIGN_NONE, top_data=[], theta_min=THEAT_MIN_DEFAULT, theta_max=THEAT_MAX_DEFAULT, multi=100):
   # Variable initiation
   Nb = fil.Nb
   R0 = fil.Rb
   L = Nb*R0
   dmin = fil.dmin
-  last_atom_type = data.n_atom_types
-  data.n_atom_types += fil.get_ntypes()
+  #last_atom_type = data.n_atom_types
+  #data.n_atom_types += fil.get_ntypes()
   if fil.b_bonds: data.n_bond_types += 1
   if fil.b_angles: data.n_angle_types += 1
   if fil.b_dihedrals: data.n_dihedral_types += 1
@@ -248,7 +452,7 @@ def gen_straight_filaments(fil, Nf, data, xyz_max=[], periodic=[], twoD=TWOD_FLA
       ym = Ys + Rs*sin(psi)
       zm = rnd.uniform(xyz_max[2][0], xyz_max[2][1])
       if align==ALIGN_NONE:
-        phi = rnd.uniform(0, C_2PI)
+        phi = rnd.uniform(theta_min, theta_max)
         sphi = sin(phi)
         cphi = cos(phi)
         dx0 = [sphi*sin(psi), -sphi*cos(psi), cphi]
@@ -343,36 +547,7 @@ def gen_straight_filaments(fil, Nf, data, xyz_max=[], periodic=[], twoD=TWOD_FLA
 
     # if no conflicts add the filament to the data
     n_cur += 1
-    data.n_mol += 1
-    for j in range(Nb):
-      data.n_atoms += 1
-      xn = c_xyz[j]
-      ind = data.n_atoms
-      mol = data.n_mol
-      ty = fil.get_type_index(j) + last_atom_type
-      data.atoms.append(Atom(ind, mol, ty, xn[0], xn[1], xn[2], xn[3], xn[4], xn[5]))
-
-      # add the atom to the index map
-      data.add_coord_to_map(ind)
-
-      # add bonds, angles, and dihedrals
-      if fil.b_bonds and j>0:
-        data.n_bonds += 1
-        ib = data.n_bonds
-        ty = data.n_bond_types
-        data.bonds.append(Bond(ib, ty, ind-1, ind))
-      
-      if fil.b_angles and j>1:
-        data.n_angles += 1
-        ib = data.n_angles
-        ty = data.n_angle_types
-        data.angles.append(Angle(ib, ty, ind-2, ind-1, ind))
-      
-      if fil.b_dihedrals and j>2:
-        data.n_dihedrals += 1
-        ib = data.n_dihedrals
-        ty = data.n_dihedral_types
-        data.dihedrals.append(Dihedral(ib, ty, ind-3, ind-2, ind-1, ind))
+    add_filament_to_data(c_xyz, fil, data)
 
     if n_cur%fr==0:
       p = round(100*float(n_cur)/Nf,2)
@@ -380,6 +555,10 @@ def gen_straight_filaments(fil, Nf, data, xyz_max=[], periodic=[], twoD=TWOD_FLA
 
     if n_cur==Nf: break
   
-  prb.render(100, 'Adding streight filaments\nNumber of tries %d' % n_tries)
+  # Incrementing atom types
+  data.n_atom_types += fil.get_ntypes()
+
+  p = round(100*float(n_cur)/Nf,2)
+  prb.render(int(p), 'Adding streight filaments\nNumber of tries %d' % n_tries)
   print "%d filaments were added out of %d required, with %d attempts made" % (n_cur, Nf, n_tries)
   print "The filament was generated outside domian %d times\n" % n_out_dom
