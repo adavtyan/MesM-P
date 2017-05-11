@@ -79,7 +79,7 @@ def add_proteins(prot, Nf, data, xyz_max=[], periodic=[], multi=100):
   # Try up to 100 times more time when the number of filements required
   fr=Nf/100
   if fr<=0: fr=1
-  #prb = ProgressBar('green', width=50, block='*', empty='o')
+  prb = ProgressBar('green', width=50, block='*', empty='o')
   for i in range(Nf*multi):
     n_tries += 1
     outside_domain = False
@@ -113,7 +113,7 @@ def add_proteins(prot, Nf, data, xyz_max=[], periodic=[], multi=100):
 
     if n_cur%fr==0:
       p = round(100*float(n_cur)/Nf,2)
-      #prb.render(int(p), 'Adding complex proteins\nNumber of tries %d' % n_tries)
+      prb.render(int(p), 'Adding complex proteins\nNumber of tries %d' % n_tries)
 
     if n_cur==Nf: break
 
@@ -134,6 +134,6 @@ def add_proteins(prot, Nf, data, xyz_max=[], periodic=[], multi=100):
   data.n_dihedral_types += prot.N_dih
 
   p = round(100*float(n_cur)/Nf,2)
-  #prb.render(int(p), 'Adding complex proteins\nNumber of tries %d' % n_tries)
+  prb.render(int(p), 'Adding complex proteins\nNumber of tries %d' % n_tries)
   print "%d proteins were added out of %d required, with %d attempts made" % (n_cur, Nf, n_tries)
   print "The proteins was generated outside domian %d times\n" % n_out_dom
