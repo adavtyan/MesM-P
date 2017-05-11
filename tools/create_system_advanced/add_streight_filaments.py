@@ -85,7 +85,7 @@ def extend_xyz_f(xyz, dx, nn, box, L, prd, flag):
 
   return xyz
 
-def add_filament_to_data(c_xyz, fil, data, b_add_2_map=True):
+def add_filament_to_data(c_xyz, fil, data, b_add_to_map=True):
   data.n_mol += 1
   for j in range(fil.Nb):
     data.n_atoms += 1
@@ -97,7 +97,7 @@ def add_filament_to_data(c_xyz, fil, data, b_add_2_map=True):
     data.atoms.append(Atom(ind, mol, ty, xn[0], xn[1], xn[2], xn[3], xn[4], xn[5]))
 
     # add the atom to the index map
-    if b_add_2_map: data.add_coord_to_map(ind)
+    if b_add_to_map: data.add_coord_to_map(ind)
 
     # add bonds, angles, and dihedrals
     if fil.b_bonds and j>0:
@@ -381,11 +381,6 @@ def gen_straight_filaments(fil, Nf, data, xyz_max=[], periodic=[], twoD=TWOD_FLA
         phi = rnd.uniform(0, C_2PI)
         sphi = sin(phi)
         cphi = cos(phi)
-        ## tau_x = (1 - zn^2 + zn^2*cos[phi])*cos[psi] - zn*sin[phi]*sin[psi]
-        ## tau_y = (1 - zn^2 + zn^2*cos[phi])*sin[psi] + zn*sin[phi]*cos[psi]
-        ## tau_z = zn*sqrt(1 - zn^2)*(1 - cos[phi])
-        #a1 = 1.0 + zn*zn*(cphi - 1.0)
-        #dx0 = [a1*cpsi - zn*sphi*spsi, a1*spsi + zn*sphi*cpsi, zn*znc*(1.0 - cphi)]
 
         # tau_x = -zn*sin[phi]*cos[psi] - cos[phi]*sin[psi]
         # tau_y = -zn*sin[phi]*sin[psi] + cos[phi]*cos[psi]
@@ -495,28 +490,28 @@ def gen_straight_filaments(fil, Nf, data, xyz_max=[], periodic=[], twoD=TWOD_FLA
         phi = rnd.uniform(0, 2.0*pi)
         dx = [0.0, R0*cos(phi), R0*sin(phi)]
 
-    # pre-check if anything is outside of the allowed domian
-    outside_domian = False
+    # pre-check if anything is outside of the allowed domain
+    outside_domain = False
     # if placed on sphere or a cylinder also check for the starting point
     if twoD==TWOD_FLAG_SP or twoD==TWOD_FLAG_CL:
       if not periodic[0]:
-        if x0<xyz_max[0][0] or x0>xyz_max[0][1]: outside_domian = True
+        if x0<xyz_max[0][0] or x0>xyz_max[0][1]: outside_domain = True
       if not periodic[1]:
-        if y0<xyz_max[1][0] or y0>xyz_max[1][1]: outside_domian = True
+        if y0<xyz_max[1][0] or y0>xyz_max[1][1]: outside_domain = True
       if not periodic[2]:
-        if z0<xyz_max[2][0] or z0>xyz_max[2][1]: outside_domian = True
+        if z0<xyz_max[2][0] or z0>xyz_max[2][1]: outside_domain = True
     # check for the ending point defined as:
     # xyz = [x0 + RN*dx[0], y0 + RN*dx[1], z0 + RN*dx[2]]
     if not periodic[0]:
       x = x0 + Nb*dx[0]
-      if x<xyz_max[0][0] or x>xyz_max[0][1]: outside_domian = True
+      if x<xyz_max[0][0] or x>xyz_max[0][1]: outside_domain = True
     if not periodic[1]:
       y = y0 + Nb*dx[1]
-      if y<xyz_max[1][0] or y>xyz_max[1][1]: outside_domian = True
+      if y<xyz_max[1][0] or y>xyz_max[1][1]: outside_domain = True
     if not periodic[2]:
       z = z0 + Nb*dx[2]
-      if z<xyz_max[2][0] or z>xyz_max[2][1]: outside_domian = True
-    if outside_domian:
+      if z<xyz_max[2][0] or z>xyz_max[2][1]: outside_domain = True
+    if outside_domain:
       n_out_dom += 1
       continue
 
@@ -529,21 +524,7 @@ def gen_straight_filaments(fil, Nf, data, xyz_max=[], periodic=[], twoD=TWOD_FLA
 
       c_xyz.append([xyz[0], xyz[1], xyz[2], nn[0], nn[1], nn[2]])
 
-      # check if anything is outside of the allowed domian
-#      if not periodic[0] and (xyz[0]<xyz_max[0][0] or xyz[0]>xyz_max[0][1]):
-#        outside_domian = True
-#        n_out_dom += 1
-#        break
-#      if not periodic[1] and (xyz[1]<xyz_max[1][0] or xyz[1]>xyz_max[1][1]):
-#        outside_domian = True
-#        n_out_dom += 1
-#        break
-#      if not periodic[2] and (xyz[2]<xyz_max[2][0] or xyz[2]>xyz_max[2][1]):
-#        outside_domian = True
-#        n_out_dom += 1
-#        break
-
-    if outside_domian or data.has_conflict(c_xyz, dmin, ext_flags): continue
+    if outside_domain or data.has_conflict(c_xyz, dmin, ext_flags): continue
 
     # if no conflicts add the filament to the data
     n_cur += 1
@@ -561,4 +542,4 @@ def gen_straight_filaments(fil, Nf, data, xyz_max=[], periodic=[], twoD=TWOD_FLA
   p = round(100*float(n_cur)/Nf,2)
   prb.render(int(p), 'Adding streight filaments\nNumber of tries %d' % n_tries)
   print "%d filaments were added out of %d required, with %d attempts made" % (n_cur, Nf, n_tries)
-  print "The filament was generated outside domian %d times\n" % n_out_dom
+  print "The filament was generated outside domain %d times\n" % n_out_dom

@@ -1,9 +1,16 @@
 import sys
+import re
+import numpy as np
+from math_lib import *
 
 DATA_TY_ATOM = 0
 DATA_TY_MOL = 1
 DATA_TY_FULL = 2
 DATA_TY_EM2 = 3
+
+PROT_AL_NONE = 0
+PROT_AL_XY = 1
+PROT_AL_X = 2
 
 class Atom:
   id = 0
@@ -87,6 +94,47 @@ class Dihedral:
   def to_str(self):
     return "%d %d %d %d %d %d\n" % (self.id, self.ty, self.at1, self.at2, self.at3, self.at4)
 
+class Bond_Par:
+  type = 0
+  kr = 0.0
+  r0 = 0.0
+
+  def __init__(self, ty, Kr, R0):
+    self.type = ty
+    self.kr = Kr
+    self.r0 = R0
+
+  def to_str(self):
+    return "%d %f %f\n" % (self.type, self.kr, self.r0)
+
+class Angle_Par:
+  type = 0
+  kth = 0.0
+  th0 = 0.0
+
+  def __init__(self, ty, Kth, Th0):
+    self.type = ty
+    self.kth = Kth
+    self.th0 = Th0
+
+  def to_str(self):
+    return "%d %f %f\n" % (self.type, self.kth, self.th0)
+
+class Dihedral_Par:
+  type = 0
+  kd = 0.0
+  nd = 0.0
+  dl = 0.0
+
+  def __init__(self, ty, Kd, Nd, Dl):
+    self.type = ty
+    self.kd = Kd
+    self.nd = Nd
+    self.dl = Dl
+
+  def to_str(self):
+    return "%d %f %f\n" % (self.type, self.kd, self.nd, self.dl)
+
 class Data:
   data_file_type = DATA_TY_ATOM
   
@@ -111,6 +159,10 @@ class Data:
   bonds = []
   angles = []
   dihedrals = []
+
+  bond_pars = []
+  angle_pars = []
+  dihedral_pars = []
 
   smaps = [[], [], []]
 
@@ -178,6 +230,18 @@ class Data:
     if self.n_dihedrals>0: out.write("\nDihedrals\n\n")
     for idi in self.dihedrals:
        out.write(idi.to_str())
+
+    if len(self.bond_pars)>0: out.write("\nBond Coeffs\n\n")
+    for ibc in self.bond_pars:
+      out.write(ibc.to_str())
+
+    if len(self.angle_pars)>0: out.write("\nAngle Coeffs\n\n")
+    for iac in self.angle_pars:
+      out.write(iac.to_str())
+
+    if len(self.dihedral_pars)>0: out.write("\nDihedral Coeffs\n\n")
+    for idc in self.dihedral_pars:
+      out.write(idc.to_str())
 
   def reset_smaps(self):
     self.smaps = [[], [], []]
@@ -307,3 +371,255 @@ class Filament:
   def get_type_index(self, ind):
     if self.ty_map==[]: return 1
     else: return self.ty_map[ind]
+
+class Protein:
+  N_atom = 0
+  N_bond = 0
+  N_ang = 0
+  N_dih = 0
+  atoms = []
+  bonds = []
+  angles = []
+  dihedrals = []
+  bond_pars = []
+  angle_pars = []
+  dih_pars = []
+  dmin = 0.0
+  dmin_sq = 0.0
+
+  def __init__(self, dm, xyz_file="", par_file="", align_n=None, align_n2=None, align_direction=PROT_AL_XY, align_remove_cog=True):
+    self.dmin = dm
+    self.dmin_sq = dm*dm
+
+    if xyz_file!="": self.read_from_xyz(xyz_file)
+    if par_file!="": self.read_par_file(par_file)
+    if align_n!=None: self.align(align_n, align_n2, align_direction, align_remove_cog)
+
+  def add_atom(self, id, ty, x, y, z, nx=0, ny=0, nz=0):
+    mol = 1
+    self.N_atom += 1
+    self.atoms.append(Atom(id, mol, ty, x, y, z, nx, ny, nz))
+
+  def add_bond(self, at1, at2, kr, r0):
+    self.N_bond += 1
+    ty = self.N_bond
+    self.bonds.append(Bond(self.N_bond, ty, at1, at2))
+    self.bond_pars.append(Bond_Par(ty, kr, r0))
+
+  def add_angle(self, at1, at2, at3, kth, th0):
+    self.N_ang += 1
+    ty = self.N_ang
+    self.angles.append(Angle(self.N_ang, ty, at1, at2, at3))
+    self.angle_pars.append(Angle_Par(ty, kth, th0))
+
+  def add_dihedral(self, at1, at2, at3, at4, kd, nd, dl):
+    self.N_dih += 1
+    ty = self.N_dih
+    self.dihedrals.append(Dihedral(self.N_dih, ty, at1, at2, at3, at4))
+    self.dih_pars.append(Dihedral_Par(ty, kd, nd, dl))
+
+  def read_from_xyz(self, xyz=""):
+    out = open(xyz)
+    iline = 0
+    nn = 0
+    for line in out:
+      if iline==0:
+        nn = int(line)
+      elif iline>1:
+        line = line.split()
+
+        if len(line)!=4:
+          print "XYZ file format error"
+          sys.exit()
+
+        tag = line[0]
+        x = float(line[1])
+        y = float(line[2])
+        z = float(line[3])
+
+        ind = int(re.search(r'\d+', tag).group())
+
+        self.add_atom(ind, ind, x, y, z)
+      iline += 1
+    out.close()
+
+  def write_xyz(self, xyz):
+    out = open(xyz, 'w')
+    out.write("%d\n" % self.N_atom)
+    out.write("\n")
+    for i in range(self.N_atom):
+      atm = self.atoms[i]
+      out.write("A%d\t%f\t%f\t%f\n" % (atm.id, atm.x[0], atm.x[1], atm.x[2]))
+    out.close()
+
+  def read_par_file(self, par=""):
+    out = open(par)
+    state = ""
+    for line in out:
+      line = line.strip()
+
+      if line=="" or line[0]=="*" or line[0]=="!" or line[0]=="X": continue
+
+      if line=="BONDS" or line=="ANGLES" or line=="DIHEDRALS" or line=="NONBONDED":
+        state=line
+      else:
+        line = line.split()
+        if state=="BONDS":
+          if len(line)!=4:
+            print "XYZ file format error"
+            sys.exit()
+
+          at1 = int(re.search(r'\d+', line[0]).group())
+          at2 = int(re.search(r'\d+', line[1]).group())
+          kr = float(line[2])
+          r0 = float(line[3])
+
+          self.add_bond(at1, at2, kr, r0)
+        elif state=="ANGLES":
+          if len(line)!=5:
+            print "XYZ file format error"
+            sys.exit()
+
+          at1 = int(re.search(r'\d+', line[0]).group())
+          at2 = int(re.search(r'\d+', line[1]).group())
+          at3 = int(re.search(r'\d+', line[2]).group())
+          kth = float(line[3])
+          th0 = float(line[4])
+
+          self.add_angle(at1, at2, at3, kth, th0)
+        elif state=="DIHEDRALS":
+          if len(line)!=7:
+            print "XYZ file format error"
+            sys.exit()
+
+          at1 = int(re.search(r'\d+', line[0]).group())
+          at2 = int(re.search(r'\d+', line[1]).group())
+          at3 = int(re.search(r'\d+', line[2]).group())
+          at4 = int(re.search(r'\d+', line[3]).group())
+          kd = float(line[4])
+          nd = float(line[5])
+          dl = float(line[6])
+
+          self.add_dihedral(at1, at2, at3, at4, kn, nd, dl)
+    out.close()
+
+  # Align protein so that n and n2 vectors are parallel to XY plane and/or n vector is parallel to X.
+  # Possible values for 'direction' are PROT_AL_XY and PROT_AL_X.
+  # In the case of PROT_AL_XY, the plane defined by n and n2 is orienated parallel to XY.
+  # In the case of PROT_AL_X, n is additionally oriented parallel to X.
+  # If n2 vector is not given only n vector is aligned accordingly.
+  def align(self, n, n2=None, direction=PROT_AL_XY, remove_cog=True):
+    if direction==PROT_AL_NONE: return
+    
+    # Senity check
+    ierror = False
+    if type(n)!=list or len(n)!=3: ierror=True
+    if np.linalg.norm(n)==0.0: ierror=True
+    if n2!=None and len(n2)!=3: ierror=True
+    if n2!=None and (np.linalg.norm(n2)==0.0 or np.dot(n,n2)==0.0): ierror=True
+    if direction!=PROT_AL_XY and direction!=PROT_AL_X: ierror=True
+    if ierror:
+      print "align_along_XY() function input error!\n\n"
+      sys.exit()
+
+    # Make sure that n and n2 are normalized vectors
+    norm = np.linalg.norm(n)
+    if norm!=1.0:
+      n[0] /= norm
+      n[1] /= norm
+      n[2] /= norm
+    if n2!=None:
+      norm = np.linalg.norm(n2)
+      if norm!=1.0:
+        n2[0] /= norm
+        n2[1] /= norm
+        n2[2] /= norm
+
+    if n2==None:
+      if direction==PROT_AL_XY:
+        # Cosine of rotation angle theta
+        cth = np.sign(n[2])*np.sqrt(n[0]*n[0] + n[1]*n[1])
+        cth_half = np.sqrt(0.5*(1.0 + cth))
+        sth_half = np.sqrt(0.5*(1.0 - cth))
+        # Rotation axis
+        u = np.array([-n[1], n[0], 0.0]) # Cross[k, n]
+        u /= np.linalg.norm(u)
+
+        # Quaternion
+        q = [cth_half, sth_half*u[0], sth_half*u[1], sth_half*u[2]]
+      else:
+        # Cosine of rotation angle theta
+        cth = n[0]
+        cth_half = np.sqrt(0.5*(1.0 + cth))
+        sth_half = np.sqrt(0.5*(1.0 - cth))
+        # Rotation axis
+        u = np.array([0.0, n[2], -n[1]]) # Cross[n, i]
+        u /= np.linalg.norm(u)
+
+        # Quaternion
+        q = [cth_half, sth_half*u[0], sth_half*u[1], sth_half*u[2]]
+    else:
+      # direction->PROT_AL_XY
+      # Normal to the plane defined by n and n2
+      omega = np.cross(n, n2)
+      omega /= np.linalg.norm(omega)
+
+      # Cosine of rotation angle theta
+      cth = omega[2] # cos(theta)=omega.k
+      cth_half = np.sqrt(0.5*(1.0 + cth))
+      sth_half = np.sqrt(0.5*(1.0 - cth))
+      # Rotation axis
+      u = np.array([omega[1], -omega[0], 0.0]) # Cross[omega, k]
+      u /= np.linalg.norm(u)
+
+      # Quaternion
+      # q = [cth_half, sth_half*u[0], sth_half*u[1], sth_half*u[2]]
+      q = [cth_half, sth_half*u[0], sth_half*u[1], 0.0]
+
+      # If n needs to be alliged with X rotate around Z till aligned
+      if direction==PROT_AL_X:
+        qmat = quat_to_mat_trans(q)
+        nxy = vecmat(n, qmat)
+        
+        # Cosine of rotation angle theta
+        cth = nxy[0] # cos(theta)=nxy.i
+        cth_half = np.sqrt(0.5*(1.0 + cth))
+        sth_half = np.sqrt(0.5*(1.0 - cth))
+
+        # Quaternion
+        qx = [cth_half, 0.0, 0.0, -np.sign(nxy[1])*sth_half]
+
+        # Calculate q = qx**q, assuming that q[3]=0 and qx[1]=qx[2]=0
+        q = [q[0]*qx[0], q[1]*qx[0] - q[2]*qx[3], q[2]*qx[0] + q[1]*qx[3], q[0]*qx[3]]
+
+    # Rotation matrix
+    qmat = quat_to_mat_trans(q)
+
+    # Calculate the center of geometry
+    cog = [0.0, 0.0, 0.0]
+    for i in range(self.N_atom):
+      atm = self.atoms[i].x
+      cog[0] += atm[0]
+      cog[1] += atm[1]
+      cog[2] += atm[2]
+    cog[0] /= self.N_atom
+    cog[1] /= self.N_atom
+    cog[2] /= self.N_atom
+
+    # Rotate protein around its center of geometry
+    xyz = np.zeros(3)
+    for i in range(self.N_atom):
+      atm = self.atoms[i].x
+      xyz[0] = atm[0] - cog[0]
+      xyz[1] = atm[1] - cog[1]
+      xyz[2] = atm[2] - cog[2]
+
+      xyz = vecmat(xyz, qmat)
+      if not remove_cog:
+        xyz[0] += cog[0]
+        xyz[1] += cog[1]
+        xyz[2] += cog[2]
+
+      atm[0] = xyz[0]
+      atm[1] = xyz[1]
+      atm[2] = xyz[2]

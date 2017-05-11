@@ -7,6 +7,7 @@ import random as rn
 import numpy as np
 from data_stuctures import *
 from add_streight_filaments import *
+from add_complex_proteins import *
 from add_solvent_tools import *
 
 SMALL = 0.000001
@@ -23,6 +24,7 @@ b_solvent = False  # Include solvent or not
 two_ty_sol = False   # Use two type of solvents, where one cannot have protein concetration
 b_ibar = True # Include I-BAR or not
 b_filaments = False # Include actin filaments or not
+b_proteins = False # Include complex proteins
 data_file = "data.em2"   # data file name
 sqr3half = 0.866025 # sqrt(3)/2
 
@@ -37,6 +39,7 @@ mem_mass = 1          # mass of the membrane particle
 sol_mass = 1          # mass of the solvent particle
 ibar_mass = 1         # mass of the ibar particle
 actin_mass = 1        # mass of the actin filament particle
+prot_mass = 1         # mass of the protein particle
 
 # Solvent parameters
 srad = 39.4464      # The size of the solvent particles
@@ -80,12 +83,19 @@ di_min = 1.5*Rib # Minimum seperation between I-BAR beads
 zi0 = zM0 - 2.0*Rib # The plane where I-BARs will be initiated
 
 # Actin filament parameters
-Nf = 10 # Number of actin filaments to add
-Nfb = 30 # Beads per actin filament
-Rfb = 100 # Seperation between actin beads
+Nf = 10    # Number of actin filaments to add
+Nfb = 30   # Beads per actin filament
+Rfb = 100  # Seperation between actin beads
 df_min = 1.5*Rfb # Minimum seperation between actin beads
 zfh = zM0 - Rfb/2.0 # Maximum Z coordinates for actin filaments
-zfl = 0 # Minimum Z coordinates for actin filaments
+zfl = 0    # Minimum Z coordinates for actin filaments
+
+# Complex protein parameters
+Np = 5               # Number of proteins
+dp_min = mrad        # Minimum seperation between proteins
+zp0 = zM0 - 2.0*Rib  # The plane where proteins will be initiated
+xyz_file = "prot.xyz"
+par_file = "prot.par"
 
 # Creating data stuctura
 data = Data(DATA_TY_EM2, box)
@@ -310,6 +320,20 @@ if b_filaments:
   th_max = np.pi/6.0
   gen_straight_filaments(actin_fil, Nf, data, xyz_max, prd, theta_max=th_max)
   data.masses.append(actin_mass)
+
+# Place complex proteins
+if b_proteins:
+  print "Adding complex proteins ..."
+  vec1 = [-10.583, 26.972, 109.369] # Main axis of the protein
+  vec2 = [-1.431, 13.432, -8.767] # Secondary axis of the protein
+  # Create protein object where vec1 is aligned with X, and plane defined by vec1 and vec2 parelle to XY
+  prot = Protein(dp_min, xyz_file, par_file, vec1, vec2, align_direction=PROT_AL_X)
+
+  xyz_max = [box[0], box[1], [zp0, zp0]]
+  add_proteins(prot, Np, data, xyz_max)
+
+  for i in range(prot.N_atom):
+    data.masses.append(prot_mass)
 
 # Generating solvent coordinates
 if b_solvent:
