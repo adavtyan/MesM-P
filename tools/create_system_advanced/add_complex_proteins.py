@@ -66,6 +66,38 @@ def add_protein_to_data(c_xyz, prot, data, b_add_to_map=True):
   data.n_angles += prot.N_ang
   data.n_dihedrals += prot.N_dih
 
+def add_types(prot, data):
+  # Adding bond, angle, and dihedral coefficents
+  for ibc in prot.bond_pars:
+    data.bond_pars.append(Bond_Par(ibc.type, ibc.kr, ibc.r0))
+
+  for iac in prot.angle_pars:
+    data.angle_pars.append(Angle_Par(iac.type, iac.kth, iac.th0))
+
+  for idc in prot.dih_pars:
+    data.dihedral_pars.append(Dihedral_Par(idc.type, idc.kd, idc.nd, idc.dl))
+
+  # Incrementing atom, bond, angle, and dihedral types
+  data.n_atom_types += prot.N_atom
+  data.n_bond_types += prot.N_bond
+  data.n_angle_types += prot.N_ang
+  data.n_dihedral_types += prot.N_dih
+
+
+def add_protein_at(prot, data, x0, periodic=[]):
+  if periodic==[]: periodic = [True, True, True]
+
+  c_xyz = []
+  for j in range(prot.N_atom):
+    xb = prot.atoms[j].x
+    nn = [0, 0, 0]
+    xyz = [x0[0], x0[1], x0[2]]
+    place_bead(xyz, xb, nn, data.box, data.L, periodic)
+
+    c_xyz.append([xyz[0], xyz[1], xyz[2], nn[0], nn[1], nn[2]])
+
+  add_protein_to_data(c_xyz, prot, data)
+
 def add_proteins(prot, Nf, data, xyz_max=[], periodic=[], multi=100):
   Np = prot.N_atom
   dmin = prot.dmin
