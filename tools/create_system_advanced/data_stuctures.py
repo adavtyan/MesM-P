@@ -98,42 +98,57 @@ class Bond_Par:
   type = 0
   kr = 0.0
   r0 = 0.0
+  func = ""
 
-  def __init__(self, ty, Kr, R0):
+  def __init__(self, ty, Kr, R0, fn=""):
     self.type = ty
     self.kr = Kr
     self.r0 = R0
+    self.func = fn
 
   def to_str(self):
-    return "%d %f %f\n" % (self.type, self.kr, self.r0)
+    if self.func=="":
+      return "%d %f %f\n" % (self.type, self.kr, self.r0)
+    else:
+      return "%d %s %f %f\n" % (self.type, self.func, self.kr, self.r0)
 
 class Angle_Par:
   type = 0
   kth = 0.0
   th0 = 0.0
+  func = ""
 
-  def __init__(self, ty, Kth, Th0):
+  def __init__(self, ty, Kth, Th0, fn=""):
     self.type = ty
     self.kth = Kth
     self.th0 = Th0
+    self.func = fn
 
   def to_str(self):
-    return "%d %f %f\n" % (self.type, self.kth, self.th0)
+    if self.func=="":
+      return "%d %f %f\n" % (self.type, self.kth, self.th0)
+    else:
+      return "%d %s %f %f\n" % (self.type, self.func, self.kth, self.th0)
 
 class Dihedral_Par:
   type = 0
   kd = 0.0
   nd = 0.0
   dl = 0.0
+  func = ""
 
-  def __init__(self, ty, Kd, Nd, Dl):
+  def __init__(self, ty, Kd, Nd, Dl, fn=""):
     self.type = ty
     self.kd = Kd
     self.nd = Nd
     self.dl = Dl
+    self.func = fn
 
   def to_str(self):
-    return "%d %f %f\n" % (self.type, self.kd, self.nd, self.dl)
+    if self.func=="":
+      return "%d %f %f %f\n" % (self.type, self.kd, self.nd, self.dl)
+    else:
+      return "%d %s %f %f %f\n" % (self.type, self.func, self.kd, self.nd, self.dl)
 
 class Data:
   data_file_type = DATA_TY_ATOM
@@ -384,6 +399,9 @@ class Protein:
   bond_pars = []
   angle_pars = []
   dih_pars = []
+  bond_func = ""
+  angle_func = ""
+  dih_func = ""
   dmin = 0.0
   dmin_sq = 0.0
 

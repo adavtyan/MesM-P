@@ -66,16 +66,16 @@ def add_protein_to_data(c_xyz, prot, data, b_add_to_map=True):
   data.n_angles += prot.N_ang
   data.n_dihedrals += prot.N_dih
 
-def add_types(prot, data):
+def add_protein_types(prot, data):
   # Adding bond, angle, and dihedral coefficents
   for ibc in prot.bond_pars:
-    data.bond_pars.append(Bond_Par(ibc.type, ibc.kr, ibc.r0))
+    data.bond_pars.append(Bond_Par(ibc.type, ibc.kr, ibc.r0, prot.bond_func))
 
   for iac in prot.angle_pars:
-    data.angle_pars.append(Angle_Par(iac.type, iac.kth, iac.th0))
+    data.angle_pars.append(Angle_Par(iac.type, iac.kth, iac.th0, prot.angle_func))
 
   for idc in prot.dih_pars:
-    data.dihedral_pars.append(Dihedral_Par(idc.type, idc.kd, idc.nd, idc.dl))
+    data.dihedral_pars.append(Dihedral_Par(idc.type, idc.kd, idc.nd, idc.dl, prot.dih_func))
 
   # Incrementing atom, bond, angle, and dihedral types
   data.n_atom_types += prot.N_atom
@@ -151,13 +151,13 @@ def add_proteins(prot, Nf, data, xyz_max=[], periodic=[], multi=100):
 
   # Adding bond, angle, and dihedral coefficents
   for ibc in prot.bond_pars:
-    data.bond_pars.append(Bond_Par(ibc.type, ibc.kr, ibc.r0))
+    data.bond_pars.append(Bond_Par(ibc.type, ibc.kr, ibc.r0, prot.bond_func))
 
   for iac in prot.angle_pars:
-    data.angle_pars.append(Angle_Par(iac.type, iac.kth, iac.th0))
+    data.angle_pars.append(Angle_Par(iac.type, iac.kth, iac.th0, prot.angle_func))
 
   for idc in prot.dih_pars:
-    data.dihedral_pars.append(Dihedral_Par(idc.type, idc.kd, idc.nd, idc.dl))
+    data.dihedral_pars.append(Dihedral_Par(idc.type, idc.kd, idc.nd, idc.dl, prot.dih_func))
   
   # Incrementing atom, bond, angle, and dihedral types
   data.n_atom_types += Np

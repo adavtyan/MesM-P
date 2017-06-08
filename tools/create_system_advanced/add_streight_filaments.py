@@ -118,7 +118,39 @@ def add_filament_to_data(c_xyz, fil, data, b_add_to_map=True):
       ty = data.n_dihedral_types
       data.dihedrals.append(Dihedral(ib, ty, ind-3, ind-2, ind-1, ind))
 
+def add_filament_at(fil, data, x0, dx0, periodic=[]):
+  # Variable initiation
+  Nb = fil.Nb
+  R0 = fil.Rb
+  L = Nb*R0
+  if periodic==[]: periodic = [True, True, True]
+  ext_flags = [1, 1, 1]
+  ierror = False
 
+  # Make sure that dx0 is unit vector
+  norm = dx0[0]*dx0[0] + dx0[1]*dx0[1] + dx0[2]*dx0[2]
+  if norm>0.0:
+    if norm!=1.0:
+      norm_inv = 1.0/norm
+      dx0 = [dx[0]*norm_inv, dx[1]*norm_inv, dx[2]*norm_inv]
+  else: ierror = True
+
+  if ierror:
+    print "add_filament_at() function input error!\n\n"
+    sys.exit()
+
+  dx = [R0*dx0[0], R0*dx0[1], R0*dx0[2]]
+
+  c_xyz = []
+  xyz = [x0[0], x0[1], x0[2]] 
+  nn = [0, 0, 0]
+  for j in range(Nb):
+    extend_xyz_f(xyz, dx, nn, data.box, data.L, periodic, ext_flags)
+
+    c_xyz.append([xyz[0], xyz[1], xyz[2], nn[0], nn[1], nn[2]])
+
+  add_filament_to_data(c_xyz, fil, data)
+    
 def gen_helical_scaffold(fil, Nf, data, top_data=[], periodic=True, xyz_max=[], sp_min=0.0):
   # Variable initiation
   Nb = fil.Nb
