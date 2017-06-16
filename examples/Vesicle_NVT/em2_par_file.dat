@@ -1,4 +1,4 @@
-# EM2 model parameters in real LAMMPS units (e.g. kcal/mol for energy and A for distance)
+# MesM-P model parameters in real LAMMPS units (e.g. kcal/mol for energy and A for distance)
 # Per-type moment of ineria is defined in integration_conf.dat
 
 # I J epsilon k0 sigma

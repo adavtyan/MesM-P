@@ -6,7 +6,7 @@ import sys
 import random as rn
 import numpy as np
 from data_stuctures import *
-from add_streight_filaments import *
+from add_straight_filaments import *
 from add_complex_proteins import *
 from add_solvent_tools import *
 

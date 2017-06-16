@@ -149,6 +149,7 @@ if gen:
 else:
   lconv = 10.0 # Distance conversion factor
   data = np.loadtxt(conf_file)
+  n_tot = (len(data)-1)/2
   if data.shape!=(2*n_tot+1, 4):
     print "Config file format error!\n"
     sys.exit()
@@ -157,6 +158,7 @@ else:
   # correspond to system definition
   for i in range(n_tot):
     ty = data[i+1,3]
+    types.append(ty)
     if (i<n_mem and ty!=1) or (i>=n_mem and ty!=2):
       print "Config file format error!\n"
       sys.exit()
@@ -167,7 +169,6 @@ else:
 
   xyz = lconv*data[1:n_tot+1,:3]
   quat = data[n_tot+1:]
-  types.append(ty)
 
 print "Box dimentions" 
 print Lx, Ly, Lz
