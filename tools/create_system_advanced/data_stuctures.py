@@ -1,3 +1,5 @@
+# Author: Aram Davtyan
+
 import sys
 import re
 import numpy as np

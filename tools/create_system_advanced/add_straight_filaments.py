@@ -1,3 +1,5 @@
+# Author: Aram Davtyan
+
 import sys
 import random as rnd
 from math import pi, sin, cos, sqrt, ceil, floor

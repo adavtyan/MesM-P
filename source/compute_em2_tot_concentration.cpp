@@ -11,6 +11,10 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+/* ----------------------------------------------------------------------
+   Contributing author: Aram Davtyan
+------------------------------------------------------------------------- */
+
 #include "mpi.h"
 #include "compute_em2_tot_concentration.h"
 #include "atom.h"

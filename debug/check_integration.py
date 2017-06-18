@@ -1,3 +1,5 @@
+# Author: Aram Davtyan
+
 import sys
 
 class Frame:

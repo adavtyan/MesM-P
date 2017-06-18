@@ -10,6 +10,8 @@
  * dump_modify  [ID] sort id
  *
  * The output is a lammpstrj file specified as the second argumnet.
+ *
+ * Author: Aram Davtyan
  */
 
 #include <stdio.h>

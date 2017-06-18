@@ -11,6 +11,10 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+/* ----------------------------------------------------------------------
+   Contributing author: Aram Davtyan
+------------------------------------------------------------------------- */
+
 #ifdef FIX_CLASS
 
 FixStyle(nvt/em2/rot,FixNVTEM2ROT)

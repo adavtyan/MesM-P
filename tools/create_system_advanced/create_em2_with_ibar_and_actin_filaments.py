@@ -1,6 +1,7 @@
 # This script allows generation the toplogy file
 # for LAMMPS simulations of MesM-P system with explicit I-BARs and actin filaments
 # Either flat membrane or vesicular systems can be created
+# Author: Aram Davtyan
 
 import sys
 import random as rn

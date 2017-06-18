@@ -1,4 +1,5 @@
-#Last updated 6/29/12, 1:10 pm
+# Last updated 6/29/12
+# Author: Aram Davtyan
 
 import random
 import sys

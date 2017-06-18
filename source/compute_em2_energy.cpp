@@ -11,6 +11,10 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+/* ----------------------------------------------------------------------
+   Contributing author: Aram Davtyan
+------------------------------------------------------------------------- */
+
 #include "compute_em2_energy.h"
 #include "update.h"
 #include "group.h"

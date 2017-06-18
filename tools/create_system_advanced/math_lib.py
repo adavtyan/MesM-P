@@ -1,3 +1,5 @@
+# Author: Aram Davtyan
+
 import numpy as np
 
 def vecmat(v, m):
